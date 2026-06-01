@@ -1,0 +1,38 @@
+from __future__ import annotations
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..schemas.credential import CredentialCreate, CredentialUpdate, CredentialOut
+from ..services.credential import (
+    list_credentials, create_credential, update_credential,
+    delete_credential, get_credential_or_404,
+)
+from ..services.auth import get_current_user
+from ..models.user import User
+
+router = APIRouter(prefix="/credentials", tags=["Credenciales"])
+
+
+@router.get("/", response_model=list[CredentialOut])
+def get_all(
+    client_id: int | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    return list_credentials(db, client_id)
+
+
+@router.post("/", response_model=CredentialOut, status_code=201)
+def create(data: CredentialCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return create_credential(db, data)
+
+
+@router.put("/{cred_id}", response_model=CredentialOut)
+def update(cred_id: int, data: CredentialUpdate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return update_credential(db, cred_id, data)
+
+
+@router.delete("/{cred_id}", status_code=204)
+def delete(cred_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    delete_credential(db, cred_id)
