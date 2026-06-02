@@ -6,7 +6,10 @@ __pycache__/
 .Python
 *.egg-info/
 dist/
-build/
+# build/ excluye artefactos pero versiona los scripts del instalador
+build/*
+!build/*.nsi
+!build/*.iss
 *.egg
 
 # Virtual environment
