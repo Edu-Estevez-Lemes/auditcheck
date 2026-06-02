@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Play, StopCircle, CheckCircle, AlertCircle, Wifi, Server } from 'lucide-react'
+import { Play, StopCircle, CheckCircle, AlertCircle, Wifi } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { scanApi } from '../lib/api'
 import type { ClientSummary, ScanEvent } from '../types'
@@ -37,6 +37,15 @@ export function AuditWizard({ clients, onSuccess, onCancel }: Props) {
   const wsRef = useRef<WebSocket | null>(null)
   const eventsEndRef = useRef<HTMLDivElement>(null)
 
+  // Refs para evitar stale closures en callbacks de WebSocket
+  const scanSavedRef = useRef(false)
+  const phaseRef = useRef<Phase>('config')
+
+  function safeSetPhase(p: Phase) {
+    phaseRef.current = p
+    setPhase(p)
+  }
+
   useEffect(() => {
     eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [progress.events])
@@ -68,10 +77,12 @@ export function AuditWizard({ clients, onSuccess, onCancel }: Props) {
       setAuditId(data.audit_id)
       setScanId(data.scan_id)
       setProgress({ total_ips: data.total_ips, live_count: 0, devices_found: 0, current_ip: null, events: [] })
-      setPhase('scanning')
+      scanSavedRef.current = false
+      safeSetPhase('scanning')
 
-      // Conectar WebSocket
-      const wsUrl = `ws://${window.location.host}/api/v1/scan/ws/${data.scan_id}`
+      // Conectar WebSocket — usar /api/v1/... para que Vite lo proxie correctamente
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const wsUrl = `${wsProtocol}//${window.location.host}/api/v1/scan/ws/${data.scan_id}`
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
@@ -79,13 +90,24 @@ export function AuditWizard({ clients, onSuccess, onCancel }: Props) {
         const event: ScanEvent = JSON.parse(e.data)
         handleScanEvent(event)
       }
+
       ws.onerror = () => {
-        setPhase('error')
-        toast.error('Error en la conexión del escaneo')
+        // Solo mostrar error si el escaneo NO se guardó ya
+        // (el WS se cierra normalmente al completar, lo que puede disparar onerror en Chrome)
+        if (!scanSavedRef.current) {
+          safeSetPhase('error')
+          toast.error('Error en la conexión del escaneo')
+        }
       }
+
       ws.onclose = () => {
-        if (phase === 'scanning') setPhase('done')
+        // Si el WS se cierra sin que llegara scan_saved, hay un problema
+        if (!scanSavedRef.current && phaseRef.current === 'scanning') {
+          safeSetPhase('error')
+          toast.error('La conexión con el escaneo se interrumpió')
+        }
       }
+
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       toast.error(detail || 'Error al iniciar el escaneo')
@@ -110,11 +132,15 @@ export function AuditWizard({ clients, onSuccess, onCancel }: Props) {
       } else if (event.type === 'scan_complete') {
         newEvents.push(`\n Escaneo completado: ${(event as unknown as Record<string, unknown>)['total_devices'] ?? 0} dispositivos encontrados`)
       } else if (event.type === 'scan_saved') {
-        newEvents.push(`💾 Resultados guardados en auditoría #${event.audit_id}`)
-        setTimeout(() => setPhase('done'), 800)
+        // Marcar como completado ANTES del timeout para que onerror/onclose no lo sobreescriban
+        scanSavedRef.current = true
+        newEvents.push(`Resultados guardados en auditoría #${event.audit_id}`)
+        setTimeout(() => safeSetPhase('done'), 600)
       } else if (event.type === 'scan_error') {
-        newEvents.push(`❌ Error: ${event.error}`)
-        setPhase('error')
+        newEvents.push(`Error: ${event.error}`)
+        safeSetPhase('error')
+      } else if (event.type === 'ping' || event.type === 'done') {
+        // Ignorar pings y el mensaje de cierre
       }
 
       if (newEvents.length > 200) newEvents.splice(0, newEvents.length - 200)
@@ -190,7 +216,7 @@ export function AuditWizard({ clients, onSuccess, onCancel }: Props) {
   }
 
   const progressPct = progress.total_ips > 0
-    ? Math.round(((progress.live_count) / progress.total_ips) * 100)
+    ? Math.round((progress.live_count / progress.total_ips) * 100)
     : 0
 
   return (
@@ -206,7 +232,9 @@ export function AuditWizard({ clients, onSuccess, onCancel }: Props) {
         )}
         <div className="flex-1">
           <p className="font-medium text-text-primary text-sm">
-            {phase === 'scanning' ? 'Escaneo en progreso...' : phase === 'done' ? 'Escaneo completado' : 'Error en el escaneo'}
+            {phase === 'scanning' ? 'Escaneo en progreso...'
+              : phase === 'done' ? 'Escaneo completado correctamente'
+              : 'Error en el escaneo'}
           </p>
           {phase === 'scanning' && (
             <p className="text-xs text-text-muted">
@@ -245,6 +273,9 @@ export function AuditWizard({ clients, onSuccess, onCancel }: Props) {
           <button className="btn-success" onClick={() => onSuccess(auditId)}>
             <CheckCircle size={14} /> Ver resultados
           </button>
+        )}
+        {(phase === 'error' || phase === 'done') && !auditId && (
+          <button className="btn-secondary" onClick={handleCancel}>Cerrar</button>
         )}
         {phase === 'error' && (
           <button className="btn-secondary" onClick={handleCancel}>Cerrar</button>

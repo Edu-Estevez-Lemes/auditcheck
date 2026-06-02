@@ -62,6 +62,13 @@ export const auditsApi = {
   update: (id: number, data: unknown) => api.put(`/audits/${id}`, data),
   delete: (id: number) => api.delete(`/audits/${id}`),
   getDevices: (id: number) => api.get(`/audits/${id}/devices`),
+  updateDevice: (auditId: number, deviceId: number, data: unknown) =>
+    api.put(`/audits/${auditId}/devices/${deviceId}`, data),
+  downloadRdp: (auditId: number, deviceId: number) =>
+    api.get(`/audits/${auditId}/devices/${deviceId}/rdp`, { responseType: 'blob' }),
+  launchRdp: (auditId: number, deviceId: number) =>
+    api.get(`/audits/${auditId}/devices/${deviceId}/rdp-launch`, { responseType: 'blob' }),
+  getClientCredentials: (auditId: number) => api.get(`/audits/${auditId}/client-credentials`),
   getFindings: (id: number) => api.get(`/audits/${id}/findings`),
   addFinding: (id: number, data: unknown) => api.post(`/audits/${id}/findings`, data),
   updateFinding: (auditId: number, findingId: number, data: unknown) =>
@@ -82,6 +89,12 @@ export const dashboardApi = {
   stats: () => api.get('/dashboard/stats'),
   recentAudits: (limit = 10) => api.get('/dashboard/recent-audits', { params: { limit } }),
   findingsTrend: (days = 30) => api.get('/dashboard/findings-trend', { params: { days } }),
+}
+
+// RDP nativo — lanza mstsc directamente desde el backend local (self-hosted)
+export const rdpApi = {
+  launch: (auditId: number, deviceId: number) =>
+    api.post('/rdp/launch', { audit_id: auditId, device_id: deviceId }),
 }
 
 // Auth

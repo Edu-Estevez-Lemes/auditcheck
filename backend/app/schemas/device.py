@@ -26,6 +26,22 @@ class DeviceOut(BaseModel):
     os_type: str | None = None
     os_version: str | None = None
     device_type: str
+
+    # Campos editables manualmente
+    display_name: str | None = None
+    custom_category: str | None = None
+    location: str | None = None
+    description: str | None = None
+    observations: str | None = None
+    manually_edited: bool = False
+    is_new_device: bool = True
+
+    # Credencial asociada
+    credential_id: int | None = None
+    credential_name: str | None = None      # nombre legible de la credencial
+    credential_username: str | None = None  # usuario (para RDP pre-relleno)
+    credential_domain: str | None = None    # dominio Windows (para RDP)
+
     is_up: bool
     response_time_ms: float | None = None
     ttl: int | None = None
@@ -34,3 +50,16 @@ class DeviceOut(BaseModel):
     ports: list[PortOut] = []
 
     model_config = {"from_attributes": True}
+
+
+class DeviceUpdate(BaseModel):
+    display_name: str | None = None
+    hostname: str | None = None
+    device_type: str | None = None
+    custom_category: str | None = None
+    manufacturer: str | None = None
+    os_type: str | None = None
+    location: str | None = None
+    description: str | None = None
+    observations: str | None = None
+    credential_id: int | None = None

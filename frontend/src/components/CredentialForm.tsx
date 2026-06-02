@@ -13,6 +13,7 @@ interface Props {
 
 export function CredentialForm({ clientId, onSuccess, onCancel }: Props) {
   const [showPass, setShowPass] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
   const [form, setForm] = useState({
     name: '',
     credential_type: 'windows',
@@ -25,28 +26,73 @@ export function CredentialForm({ clientId, onSuccess, onCancel }: Props) {
     is_preferred: false,
   })
 
+  function validate(): boolean {
+    const errs: Record<string, string> = {}
+    if (!form.name.trim()) errs.name = 'El nombre es obligatorio'
+    if (form.port && isNaN(Number(form.port))) errs.port = 'El puerto debe ser un número'
+    setErrors(errs)
+    return Object.keys(errs).length === 0
+  }
+
   const mut = useMutation({
     mutationFn: () =>
       credentialsApi.create({
-        ...form,
-        client_id: clientId ?? null,
+        name: form.name.trim(),
+        credential_type: form.credential_type,
+        username: form.username.trim() || null,
+        password: form.password || null,
+        host: form.host.trim() || null,
         port: form.port ? Number(form.port) : null,
+        domain: form.domain.trim() || null,
+        notes: form.notes.trim() || null,
+        is_preferred: form.is_preferred,
+        client_id: clientId ?? null,
       }),
     onSuccess: () => {
-      toast.success('Credencial guardada (contraseña cifrada)')
+      toast.success('Credencial guardada — contraseña cifrada')
       onSuccess()
     },
-    onError: () => toast.error('Error al guardar'),
+    onError: (err: unknown) => {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail || 'Error al guardar la credencial — verifica que el backend está activo')
+    },
   })
+
+  function handleSubmit() {
+    if (!validate()) return
+    mut.mutate()
+  }
+
+  function field(name: string, value: string, onChange: (v: string) => void, props?: object) {
+    return (
+      <div className="form-group">
+        <input
+          className={`input ${errors[name] ? 'border-danger' : ''}`}
+          value={value}
+          onChange={(e) => { onChange(e.target.value); setErrors(prev => ({ ...prev, [name]: '' })) }}
+          {...props}
+        />
+        {errors[name] && <p className="text-xs text-danger mt-1">{errors[name]}</p>}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
+        {/* Nombre */}
         <div className="form-group col-span-2">
           <label className="label">Nombre identificativo *</label>
-          <input className="input" placeholder="ej: Dominio Gordillo" value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <input
+            className={`input ${errors.name ? 'border-danger' : ''}`}
+            placeholder="ej: Dominio Gordillo · admin"
+            value={form.name}
+            onChange={(e) => { setForm({ ...form, name: e.target.value }); setErrors(p => ({ ...p, name: '' })) }}
+          />
+          {errors.name && <p className="text-xs text-danger mt-1">{errors.name}</p>}
         </div>
+
+        {/* Tipo */}
         <div className="form-group">
           <label className="label">Tipo *</label>
           <select className="input" value={form.credential_type}
@@ -54,11 +100,15 @@ export function CredentialForm({ clientId, onSuccess, onCancel }: Props) {
             {CREDENTIAL_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </div>
+
+        {/* Usuario */}
         <div className="form-group">
           <label className="label">Usuario</label>
           <input className="input" placeholder="username" value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })} />
         </div>
+
+        {/* Contraseña */}
         <div className="form-group col-span-2">
           <label className="label">Contraseña</label>
           <div className="relative">
@@ -74,26 +124,44 @@ export function CredentialForm({ clientId, onSuccess, onCancel }: Props) {
               {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
             </button>
           </div>
-          <p className="text-xs text-text-muted mt-1">La contraseña se cifra antes de guardarse y nunca se expone en texto plano</p>
+          <p className="text-xs text-text-muted mt-1">
+            La contraseña se cifra con AES-128 antes de guardarse y nunca se expone en texto plano
+          </p>
         </div>
+
+        {/* Host */}
         <div className="form-group">
           <label className="label">Host / IP</label>
-          <input className="input" placeholder="192.168.1.1" value={form.host}
+          <input className="input" placeholder="192.168.1.1 ó servidor.local" value={form.host}
             onChange={(e) => setForm({ ...form, host: e.target.value })} />
         </div>
+
+        {/* Puerto */}
         <div className="form-group">
           <label className="label">Puerto</label>
-          <input className="input" type="number" placeholder="443" value={form.port}
-            onChange={(e) => setForm({ ...form, port: e.target.value })} />
+          <input
+            className={`input ${errors.port ? 'border-danger' : ''}`}
+            type="number" placeholder="443"
+            value={form.port}
+            onChange={(e) => { setForm({ ...form, port: e.target.value }); setErrors(p => ({ ...p, port: '' })) }}
+          />
+          {errors.port && <p className="text-xs text-danger mt-1">{errors.port}</p>}
         </div>
-        <div className="form-group col-span-2">
-          <label className="label">Dominio (Windows)</label>
-          <input className="input" placeholder="EMPRESA.LOCAL" value={form.domain}
-            onChange={(e) => setForm({ ...form, domain: e.target.value })} />
-        </div>
+
+        {/* Dominio */}
+        {form.credential_type === 'windows' && (
+          <div className="form-group col-span-2">
+            <label className="label">Dominio Windows</label>
+            <input className="input" placeholder="EMPRESA.LOCAL" value={form.domain}
+              onChange={(e) => setForm({ ...form, domain: e.target.value })} />
+          </div>
+        )}
+
+        {/* Notas */}
         <div className="form-group col-span-2">
           <label className="label">Notas</label>
           <textarea className="input resize-none" rows={2} value={form.notes}
+            placeholder="Información adicional sobre esta credencial..."
             onChange={(e) => setForm({ ...form, notes: e.target.value })} />
         </div>
       </div>
@@ -105,8 +173,8 @@ export function CredentialForm({ clientId, onSuccess, onCancel }: Props) {
       </label>
 
       <div className="flex gap-3 justify-end pt-2 border-t border-border">
-        <button className="btn-secondary" onClick={onCancel}>Cancelar</button>
-        <button className="btn-primary" onClick={() => mut.mutate()} disabled={!form.name || mut.isPending}>
+        <button className="btn-secondary" onClick={onCancel} disabled={mut.isPending}>Cancelar</button>
+        <button className="btn-primary" onClick={handleSubmit} disabled={mut.isPending}>
           {mut.isPending ? 'Guardando...' : 'Guardar credencial'}
         </button>
       </div>

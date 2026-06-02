@@ -114,12 +114,36 @@ export interface Device {
   os_type?: string
   os_version?: string
   device_type: string
+  display_name?: string
+  custom_category?: string
+  location?: string
+  description?: string
+  observations?: string
+  manually_edited: boolean
+  is_new_device: boolean
+  credential_id?: number
+  credential_name?: string
+  credential_username?: string
+  credential_domain?: string
   is_up: boolean
   response_time_ms?: number
   ttl?: number
   first_seen?: string
   last_seen?: string
   ports: Port[]
+}
+
+export interface DeviceUpdate {
+  display_name?: string
+  hostname?: string
+  device_type?: string
+  custom_category?: string
+  manufacturer?: string
+  os_type?: string
+  location?: string
+  description?: string
+  observations?: string
+  credential_id?: number | null
 }
 
 export interface Port {

@@ -6,6 +6,7 @@ Comparativa, Recomendaciones + hoja oculta de metadatos.
 """
 from __future__ import annotations
 import io
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,9 @@ from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.chart import BarChart, PieChart, Reference
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.utils import get_column_letter
+
+# Caracteres de control que XML/openpyxl no admite en celdas
+_ILLEGAL_CHARS_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]')
 
 from .styles import (
     apply_style, STYLE_TITLE, STYLE_HEADER, STYLE_SUBHEADER,
@@ -35,9 +39,16 @@ def _set_col_width(ws: Worksheet, col: int, width: float) -> None:
     ws.column_dimensions[get_column_letter(col)].width = width
 
 
+def _clean(val: object) -> object:
+    """Elimina caracteres de control ilegales en valores de texto."""
+    if isinstance(val, str):
+        return _ILLEGAL_CHARS_RE.sub('', val)
+    return val
+
+
 def _write_row(ws: Worksheet, row: int, values: list, style: dict) -> None:
     for col, val in enumerate(values, 1):
-        cell = ws.cell(row=row, column=col, value=val)
+        cell = ws.cell(row=row, column=col, value=_clean(val))
         apply_style(cell, style)
 
 
@@ -105,14 +116,22 @@ def generate_excel_report(
     return data
 
 
+def _write_info_pair(ws, row: int, label: str, value: str, col_start: int = 1, col_end: int = 4):
+    ws.cell(row=row, column=col_start, value=label)
+    apply_style(ws.cell(row=row, column=col_start), STYLE_LABEL)
+    ws.merge_cells(f"{get_column_letter(col_start + 1)}{row}:{get_column_letter(col_end)}{row}")
+    ws.cell(row=row, column=col_start + 1, value=_clean(value))
+    apply_style(ws.cell(row=row, column=col_start + 1), STYLE_VALUE)
+
+
 def _sheet_resumen(wb, audit, client, technician, devices, findings, client_logo, corp_logo):
     ws = wb.create_sheet("Resumen General")
     ws.sheet_view.showGridLines = False
 
-    # Logos
+    # Logos — corporativo izquierda, cliente derecha
     _add_logo(ws, corp_logo, "A1")
     if client_logo:
-        _add_logo(ws, client_logo, "F1")
+        _add_logo(ws, client_logo, "G1")
 
     # Título
     ws.row_dimensions[4].height = 40
@@ -121,26 +140,55 @@ def _sheet_resumen(wb, audit, client, technician, devices, findings, client_logo
     cell.value = "INFORME DE AUDITORÍA TÉCNICA"
     apply_style(cell, STYLE_TITLE)
 
-    # Datos del informe
     row = 6
-    info_pairs = [
-        ("Cliente:", client.name if client else ""),
-        ("Fecha:", audit.completed_at.strftime("%d/%m/%Y %H:%M") if audit.completed_at else datetime.utcnow().strftime("%d/%m/%Y")),
-        ("Técnico:", technician.full_name if technician else ""),
-        ("Nombre revisión:", audit.name),
-        ("Rangos auditados:", audit.scanned_ranges or ""),
-        ("Versión ÃUDITCHECK:", audit.app_version or settings.APP_VERSION),
+
+    # ── Sección: Datos del cliente ──────────────────────────────────────────────
+    ws.merge_cells(f"A{row}:H{row}")
+    ws.cell(row=row, column=1, value="DATOS DEL CLIENTE")
+    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER)
+    row += 1
+
+    client_pairs = [
+        ("Empresa / Cliente:", client.name if client else ""),
+        ("CIF / NIF:", client.cif_nif or ""),
+        ("Dirección:", client.address or ""),
+        ("Persona de contacto:", client.contact_person or ""),
+        ("Teléfono:", client.phone or ""),
+        ("Email:", client.email or ""),
     ]
-    for label, value in info_pairs:
-        ws.cell(row=row, column=1, value=label)
-        apply_style(ws.cell(row=row, column=1), STYLE_LABEL)
-        ws.merge_cells(f"B{row}:D{row}")
-        ws.cell(row=row, column=2, value=value)
-        apply_style(ws.cell(row=row, column=2), STYLE_VALUE)
+    if client and client.observations:
+        client_pairs.append(("Observaciones:", client.observations))
+
+    for label, value in client_pairs:
+        _write_info_pair(ws, row, label, value, col_start=1, col_end=5)
         row += 1
 
-    # Resumen de hallazgos
     row += 1
+
+    # ── Sección: Datos de la revisión ───────────────────────────────────────────
+    ws.merge_cells(f"A{row}:H{row}")
+    ws.cell(row=row, column=1, value="DATOS DE LA REVISIÓN")
+    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER)
+    row += 1
+
+    audit_pairs = [
+        ("Nombre revisión:", audit.name),
+        ("Técnico responsable:", technician.full_name if technician else ""),
+        ("Rangos auditados:", audit.scanned_ranges or ""),
+        ("Fecha inicio:", audit.started_at.strftime("%d/%m/%Y %H:%M") if audit.started_at else ""),
+        ("Fecha finalización:", audit.completed_at.strftime("%d/%m/%Y %H:%M") if audit.completed_at else ""),
+        ("Versión AUDITCHECK:", audit.app_version or settings.APP_VERSION),
+    ]
+    if audit.notes:
+        audit_pairs.append(("Notas:", audit.notes))
+
+    for label, value in audit_pairs:
+        _write_info_pair(ws, row, label, value, col_start=1, col_end=5)
+        row += 1
+
+    row += 1
+
+    # ── Resumen de hallazgos ────────────────────────────────────────────────────
     ws.merge_cells(f"A{row}:H{row}")
     ws.cell(row=row, column=1, value="RESUMEN DE HALLAZGOS")
     apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER)
@@ -160,7 +208,7 @@ def _sheet_resumen(wb, audit, client, technician, devices, findings, client_logo
     values = [
         sev_counts["critical"], sev_counts["high"], sev_counts["medium"],
         sev_counts["low"], sev_counts["informational"],
-        total_findings, len(devices), status
+        total_findings, len(devices), status,
     ]
     for col_idx, (val, sev) in enumerate(zip(values[:5], ["critical", "high", "medium", "low", "informational"]), 1):
         cell = ws.cell(row=row, column=col_idx, value=val)
@@ -170,7 +218,7 @@ def _sheet_resumen(wb, audit, client, technician, devices, findings, client_logo
         apply_style(cell, STYLE_ROW_EVEN)
 
     # Ajuste columnas
-    for i, w in enumerate([18, 18, 18, 18, 18, 20, 18, 15], 1):
+    for i, w in enumerate([22, 30, 18, 14, 14, 18, 14, 12], 1):
         _set_col_width(ws, i, w)
 
 

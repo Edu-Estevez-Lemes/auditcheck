@@ -5,7 +5,7 @@ from sqlalchemy import func
 from fastapi import HTTPException
 
 from ..models.audit import Audit
-from ..models.device import Device, Port
+from ..models.device import Device, Port, DeviceKnowledge
 from ..models.finding import Finding
 from ..models.client import Client
 from ..schemas.audit import AuditCreate, AuditUpdate, AuditOut, AuditSummary
@@ -109,18 +109,36 @@ def delete_audit(db: Session, audit_id: int) -> None:
     db.commit()
 
 
+_KNOWLEDGE_FIELDS = [
+    "display_name", "device_type", "custom_category",
+    "manufacturer", "os_type", "location", "description", "observations",
+]
+_KNOWLEDGE_CREDENTIAL_FIELD = "credential_id"
+
+
 def save_scan_results(db: Session, audit_id: int, devices_data: list[dict]) -> None:
-    """Persiste los resultados de un escaneo en la base de datos."""
+    """Persiste los resultados de un escaneo, fusionando con la base de conocimiento."""
     audit = get_audit_or_404(db, audit_id)
 
     for dev_data in devices_data:
+        ip = dev_data["ip_address"]
+        mac = dev_data.get("mac_address")
+
+        # Consultar base de conocimiento por IP del cliente
+        knowledge = db.query(DeviceKnowledge).filter(
+            DeviceKnowledge.client_id == audit.client_id,
+            DeviceKnowledge.ip_address == ip,
+        ).first()
+
+        is_new = knowledge is None
+
         device = Device(
             audit_id=audit_id,
             client_id=audit.client_id,
-            ip_address=dev_data["ip_address"],
+            ip_address=ip,
             hostname=dev_data.get("hostname"),
             netbios_name=dev_data.get("netbios_name"),
-            mac_address=dev_data.get("mac_address"),
+            mac_address=mac,
             manufacturer=dev_data.get("manufacturer"),
             os_type=dev_data.get("os_type"),
             device_type=dev_data.get("device_type", "unknown"),
@@ -129,7 +147,44 @@ def save_scan_results(db: Session, audit_id: int, devices_data: list[dict]) -> N
             ttl=dev_data.get("ttl"),
             first_seen=datetime.utcnow(),
             last_seen=datetime.utcnow(),
+            is_new_device=is_new,
+            manually_edited=False,
         )
+
+        if knowledge:
+            # Fusionar datos curados manualmente en el nuevo registro
+            for field in _KNOWLEDGE_FIELDS:
+                stored = getattr(knowledge, field, None)
+                if stored:
+                    setattr(device, field, stored)
+            # credential_id se copia si fue asignado previamente
+            if knowledge.credential_id is not None:
+                device.credential_id = knowledge.credential_id
+            # Si hay datos de conocimiento, indicamos que tiene ediciones previas
+            device.manually_edited = bool(
+                knowledge.display_name or knowledge.location or
+                knowledge.description or knowledge.observations or
+                knowledge.custom_category or knowledge.credential_id
+            )
+            # Actualizar knowledge
+            knowledge.last_seen_audit_id = audit_id
+            knowledge.times_seen = (knowledge.times_seen or 1) + 1
+            if mac and not knowledge.mac_address:
+                knowledge.mac_address = mac
+        else:
+            # Primera vez que vemos este dispositivo: crear entrada de conocimiento
+            knowledge = DeviceKnowledge(
+                client_id=audit.client_id,
+                ip_address=ip,
+                mac_address=mac,
+                device_type=dev_data.get("device_type", "unknown"),
+                manufacturer=dev_data.get("manufacturer"),
+                os_type=dev_data.get("os_type"),
+                last_seen_audit_id=audit_id,
+                times_seen=1,
+            )
+            db.add(knowledge)
+
         db.add(device)
         db.flush()
 
@@ -146,10 +201,8 @@ def save_scan_results(db: Session, audit_id: int, devices_data: list[dict]) -> N
             )
             db.add(port)
 
-    # Generar hallazgos automáticos
     _auto_generate_findings(db, audit)
 
-    # Actualizar resumen de auditoría
     audit.status = "completed"
     audit.completed_at = datetime.utcnow()
     audit.summary = _build_summary(db, audit_id)
@@ -165,7 +218,6 @@ def _auto_generate_findings(db: Session, audit: Audit) -> None:
         ip = device.ip_address
 
         risky_checks = [
-            # (condición, severidad, título, descripción, recomendación, evidencia)
             (
                 23 in open_ports,
                 "high", f"Telnet expuesto en {ip}",
