@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from .config import settings
 from .database import engine
 from .models import Base
-from .api import auth, clients, credentials, audits, scanners, dashboard, branding, rdp as rdp_router
+from .api import auth, clients, credentials, audits, scanners, dashboard, branding, rdp as rdp_router, access as access_router
 from .services.auth import hash_password
 from .database import SessionLocal
 
@@ -94,12 +94,112 @@ def _migrate_db():
         logger.warning(f"Migración DB (device_knowledge): {e}")
 
 
+def _seed_login_profiles():
+    """
+    Carga los perfiles de login predefinidos para plataformas conocidas.
+    Solo inserta si la tabla está vacía para no duplicar en cada arranque.
+    Los perfiles son editables via API /access/login-profiles.
+    """
+    from .models.login_profile import LoginProfile
+
+    db = SessionLocal()
+    try:
+        if db.query(LoginProfile).count() > 0:
+            return  # Ya sembrado
+
+        profiles = [
+            LoginProfile(
+                name="FortiGate",
+                device_type="fortigate",
+                username_selector="#username",
+                password_selector="#secretkey",
+                submit_selector="#login_button, button[type=submit]",
+                notes="FortiOS web UI. Campo contraseña: #secretkey (no #password).",
+            ),
+            LoginProfile(
+                name="HPE iLO",
+                device_type="ilo",
+                username_selector="#login-form-username",
+                password_selector="#login-form-password",
+                submit_selector="#login-form__login",
+                notes="HP Integrated Lights-Out. iLO 4 y iLO 5.",
+            ),
+            LoginProfile(
+                name="Dell iDRAC",
+                device_type="idrac",
+                username_selector="#user",
+                password_selector="#password",
+                submit_selector="button[type=submit], #btnOK",
+                notes="Dell iDRAC 7/8/9. iDRAC 9 puede usar #idrac-username.",
+            ),
+            LoginProfile(
+                name="VMware ESXi",
+                device_type="esxi",
+                username_selector="#username",
+                password_selector="#password",
+                submit_selector=".btn-primary",
+                notes="ESXi Host Client (puerto 443). URL: /ui/",
+            ),
+            LoginProfile(
+                name="VMware vCenter",
+                device_type="vcenter",
+                username_selector="#username",
+                password_selector="#password",
+                submit_selector="button[class*='button-primary'], .btn-submit",
+                pre_login_path="/ui/#/login",
+                notes="vCenter Server Appliance (VCSA). URL: /ui/#/login",
+            ),
+            LoginProfile(
+                name="Veeam Backup & Replication",
+                device_type="veeam",
+                username_selector="input[name=Username], #username",
+                password_selector="input[name=Password], #password",
+                submit_selector="button[type=submit]",
+                notes="Veeam Backup Enterprise Manager. Puerto 9080 (HTTP) o 9443 (HTTPS).",
+            ),
+            LoginProfile(
+                name="NAS QNAP",
+                device_type="nas",
+                url_pattern="qnap|QTS|QuTS",
+                username_selector="#username-input, input[name=username]",
+                password_selector="#pwd-input, input[name=password]",
+                submit_selector="#login-btn",
+                notes="QNAP QTS / QuTS Hero.",
+            ),
+            LoginProfile(
+                name="NAS Synology",
+                device_type="nas",
+                url_pattern="synology|DSM",
+                username_selector="#login-username",
+                password_selector="#current-password",
+                submit_selector=".login-btn, button[type=submit]",
+                notes="Synology DSM. La detección usa url_pattern='synology|DSM'.",
+            ),
+            LoginProfile(
+                name="Printer Web",
+                device_type="printer",
+                username_selector="input[name=user], input[name=username], input[type=text]",
+                password_selector="input[name=password], input[type=password]",
+                submit_selector="input[type=submit], button[type=submit]",
+                notes="Selectores genéricos para impresoras con interfaz web.",
+            ),
+        ]
+        db.add_all(profiles)
+        db.commit()
+        logger.info(f"Perfiles de login sembrados: {len(profiles)} perfiles")
+    except Exception as e:
+        logger.warning(f"Error sembrando perfiles de login: {e}")
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _ensure_dirs()
     Base.metadata.create_all(bind=engine)
     _migrate_db()
     _create_default_admin()
+    _seed_login_profiles()
     logger.info(f"ÃUDITCHECK v{settings.APP_VERSION} iniciado en http://{settings.HOST}:{settings.PORT}")
     yield
     logger.info("ÃUDITCHECK detenido")
@@ -131,6 +231,7 @@ app.include_router(scanners.router, prefix=API_PREFIX)
 app.include_router(dashboard.router, prefix=API_PREFIX)
 app.include_router(branding.router, prefix=API_PREFIX)
 app.include_router(rdp_router.router, prefix=API_PREFIX)
+app.include_router(access_router.router, prefix=API_PREFIX)
 
 # Branding — logo corporativo
 @app.get("/api/v1/branding/logo")

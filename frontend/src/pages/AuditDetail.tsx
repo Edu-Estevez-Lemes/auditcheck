@@ -6,8 +6,10 @@ import {
   Copy, Monitor, Globe, Terminal, Pencil, Sparkles, Key, X, Zap,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { auditsApi, rdpApi } from '../lib/api'
+import { auditsApi, rdpApi, accessApi } from '../lib/api'
 import { DeviceEditModal } from '../components/DeviceEditModal'
+import { WebCredentialPanel } from '../components/WebCredentialPanel'
+import type { WebCredData } from '../components/WebCredentialPanel'
 import type { Audit, Device, Finding } from '../types'
 import { formatDate, SEVERITY_CONFIG, DEVICE_TYPE_LABELS } from '../lib/utils'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
@@ -191,6 +193,13 @@ export function AuditDetail() {
   const [categoryKey, setCategoryKey] = useState<string>('all')
   const [search, setSearch] = useState('')
   const [editingDevice, setEditingDevice] = useState<Device | null>(null)
+  const [webPanel, setWebPanel] = useState<{
+    open: boolean
+    loading: boolean
+    url: string
+    deviceLabel: string
+    data: WebCredData | null
+  }>({ open: false, loading: false, url: '', deviceLabel: '', data: null })
 
   const auditQ = useQuery<Audit>({
     queryKey: ['audit', auditId],
@@ -325,12 +334,21 @@ export function AuditDetail() {
     if (btn.type === 'web') {
       const url = btn.webUrl ?? getDeviceWebUrl(device)
       if (!url) return
+
+      // Abrir URL siempre en nueva pestaña
       window.open(url, '_blank', 'noopener,noreferrer')
-      if (btn.credentialUsername) {
-        toast.success(
-          `Abriendo ${url} · Usuario: ${btn.credentialUsername}`,
-          { duration: 5000 }
-        )
+
+      // Si hay credencial → mostrar panel de asistencia al login
+      if (btn.credentialName && device.credential_id) {
+        const label = device.display_name || device.hostname || device.ip_address
+        setWebPanel({ open: true, loading: true, url, deviceLabel: label, data: null })
+        try {
+          const { data } = await accessApi.getWebCredentials(auditId, device.id)
+          setWebPanel(prev => ({ ...prev, loading: false, data: data as WebCredData }))
+        } catch {
+          setWebPanel(prev => ({ ...prev, loading: false }))
+          toast.error('No se pudieron cargar las credenciales')
+        }
       }
       return
     }
@@ -777,6 +795,16 @@ export function AuditDetail() {
           </div>
         </div>
       )}
+
+      {/* Panel flotante de credenciales web */}
+      <WebCredentialPanel
+        isOpen={webPanel.open}
+        loading={webPanel.loading}
+        url={webPanel.url}
+        deviceLabel={webPanel.deviceLabel}
+        data={webPanel.data}
+        onClose={() => setWebPanel(prev => ({ ...prev, open: false }))}
+      />
 
       {/* Modal de edición */}
       {editingDevice && (

@@ -97,6 +97,14 @@ export const rdpApi = {
     api.post('/rdp/launch', { audit_id: auditId, device_id: deviceId }),
 }
 
+// Acceso web asistido — credenciales + perfiles de login
+export const accessApi = {
+  getWebCredentials: (auditId: number, deviceId: number) =>
+    api.post('/access/web-credentials', { audit_id: auditId, device_id: deviceId }),
+  listLoginProfiles: (deviceType?: string) =>
+    api.get('/access/login-profiles', { params: deviceType ? { device_type: deviceType } : {} }),
+}
+
 // Auth
 export const authApi = {
   login: (username: string, password: string) => {

@@ -8,10 +8,11 @@ from .finding import Finding
 from .vmware import VMwareHost, VMwareVM, Datastore
 from .veeam import BackupJob, BackupRepository
 from .hardware import FortiGateStatus, SNMPDevice, HardwareStatus
+from .login_profile import LoginProfile
 
 __all__ = [
     "Base", "User", "Client", "IPRange", "Credential", "Audit",
     "Device", "Port", "DeviceKnowledge", "Finding", "VMwareHost", "VMwareVM", "Datastore",
     "BackupJob", "BackupRepository", "FortiGateStatus", "SNMPDevice",
-    "HardwareStatus",
+    "HardwareStatus", "LoginProfile",
 ]
