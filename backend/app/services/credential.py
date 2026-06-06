@@ -95,6 +95,32 @@ def get_decrypted_password(db: Session, cred_id: int) -> str | None:
     return decrypt_secret(cred.encrypted_password)
 
 
+def test_credential(db: Session, cred_id: int, host: str, port: int) -> dict:
+    """Prueba conectividad TCP básica al host:puerto y actualiza estado."""
+    import socket, time
+
+    get_credential_or_404(db, cred_id)
+    start = time.time()
+    try:
+        sock = socket.create_connection((host, port), timeout=5)
+        latency_ms = int((time.time() - start) * 1000)
+        sock.close()
+        mark_credential_used(db, cred_id, True)
+        return {
+            "success": True,
+            "message": f"Puerto {port} accesible en {host} ({latency_ms} ms)",
+            "latency_ms": latency_ms,
+        }
+    except socket.timeout:
+        mark_credential_used(db, cred_id, False)
+        return {"success": False, "message": f"Timeout al conectar a {host}:{port}", "latency_ms": None}
+    except ConnectionRefusedError:
+        mark_credential_used(db, cred_id, False)
+        return {"success": False, "message": f"Conexión rechazada en {host}:{port}", "latency_ms": None}
+    except OSError as e:
+        return {"success": False, "message": f"Error de red: {e}", "latency_ms": None}
+
+
 def mark_credential_used(db: Session, cred_id: int, success: bool) -> None:
     cred = db.query(Credential).filter(Credential.id == cred_id).first()
     if cred:

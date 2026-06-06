@@ -77,7 +77,7 @@ export function DeviceEditModal({ device, auditId, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
-        className="bg-surface-1 rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto border border-border"
+        className="bg-surface rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto border border-border"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

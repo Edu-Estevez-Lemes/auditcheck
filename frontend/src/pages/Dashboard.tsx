@@ -11,6 +11,7 @@ import {
 import { dashboardApi } from '../lib/api'
 import { formatDate, SEVERITY_CONFIG, STATUS_AUDIT, timeAgo } from '../lib/utils'
 import type { DashboardStats, AuditSummary } from '../types'
+import { useThemeStore } from '../store/themeStore'
 
 const SEVERITY_COLORS = {
   critical: '#dc2626', high: '#ea580c', medium: '#d97706',
@@ -37,6 +38,11 @@ function StatCard({
 }
 
 export function Dashboard() {
+  const theme = useThemeStore((s) => s.theme)
+  const tooltipStyle = theme === 'dark'
+    ? { background: '#1c182a', border: '1px solid #28203e', borderRadius: 8, color: '#ede9fe' }
+    : { background: '#ffffff', border: '1px solid #ddd6fe', borderRadius: 8, color: '#1e0b3e' }
+
   const statsQ = useQuery<DashboardStats>({
     queryKey: ['dashboard-stats'],
     queryFn: () => dashboardApi.stats().then((r) => r.data),
@@ -111,10 +117,7 @@ export function Dashboard() {
                     <Cell key={i} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip
-                  contentStyle={{ background: '#ffffff', border: '1px solid #dde3ec', borderRadius: 8, color: '#1a2332' }}
-                  labelStyle={{ color: '#f1f5f9' }}
-                />
+                <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: tooltipStyle.color }} />
               </PieChart>
             </ResponsiveContainer>
           ) : (

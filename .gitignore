@@ -41,8 +41,9 @@ frontend/.env.local
 *.swo
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Claude Code
+# IDE local settings
 .claude/settings.local.json
 
 # Logs

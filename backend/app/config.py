@@ -7,8 +7,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Aplicación
-    APP_NAME: str = "ÃUDITCHECK"
-    APP_VERSION: str = "1.1.0"
+    APP_NAME: str = "AUDITCHECK"
+    APP_VERSION: str = "1.2.18"
     DEBUG: bool = False
 
     # Seguridad JWT

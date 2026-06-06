@@ -1,5 +1,5 @@
 """
-ÃUDITCHECK - Backend Principal
+AUDITCHECK - Backend Principal
 FastAPI application con soporte WebSocket para escaneos en tiempo real.
 """
 from __future__ import annotations
@@ -200,9 +200,9 @@ async def lifespan(app: FastAPI):
     _migrate_db()
     _create_default_admin()
     _seed_login_profiles()
-    logger.info(f"ÃUDITCHECK v{settings.APP_VERSION} iniciado en http://{settings.HOST}:{settings.PORT}")
+    logger.info(f"AUDITCHECK v{settings.APP_VERSION} iniciado en http://{settings.HOST}:{settings.PORT}")
     yield
-    logger.info("ÃUDITCHECK detenido")
+    logger.info("AUDITCHECK detenido")
 
 
 app = FastAPI(
@@ -248,6 +248,14 @@ def get_corp_icon():
     if path.exists():
         return FileResponse(str(path), media_type="image/png")
     return JSONResponse(status_code=404, content={"detail": "Icono no encontrado. Coloca icon.png en assets/branding/"})
+
+
+@app.get("/api/v1/branding/emoji1")
+def get_emoji1():
+    path = settings.BRANDING_DIR / "emoji1.png"
+    if path.exists():
+        return FileResponse(str(path), media_type="image/png")
+    return JSONResponse(status_code=404, content={"detail": "emoji1.png no encontrado en assets/branding/"})
 
 
 @app.get("/api/v1/info")

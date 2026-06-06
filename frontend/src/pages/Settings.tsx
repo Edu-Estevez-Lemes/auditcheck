@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { authApi } from '../lib/api'
 import { useAuthStore } from '../store/authStore'
 import { Modal } from '../components/Modal'
+import { Logo } from '../components/Logo'
 
 export function SettingsPage() {
   const [tab, setTab] = useState<'profile' | 'users' | 'branding' | 'about'>('profile')
@@ -245,9 +246,9 @@ function AboutTab() {
   return (
     <div className="card max-w-lg space-y-4">
       <div className="flex items-center gap-3">
-        <Shield size={28} className="text-primary" />
+        <Logo size="sm" showText={false} />
         <div>
-          <h2 className="text-xl font-bold text-text-primary">ÃUDITCHECK</h2>
+          <h2 className="text-xl font-bold text-text-primary">AUDITCHECK</h2>
           <p className="text-text-muted text-sm">v{info?.version ?? '1.0.0'}</p>
         </div>
       </div>

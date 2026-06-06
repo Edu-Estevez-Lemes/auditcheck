@@ -37,8 +37,9 @@ export function Login() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       {/* Background gradient */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-primary/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[300px] bg-accent/5 rounded-full blur-3xl" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-primary/8 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[300px] bg-accent/6 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 left-0 w-[300px] h-[200px] bg-primary/4 rounded-full blur-3xl" />
       </div>
 
       <div className="w-full max-w-md relative">
@@ -104,7 +105,7 @@ export function Login() {
         </div>
 
         <p className="text-center text-xs text-text-muted mt-6">
-          ÃUDITCHECK — Uso exclusivo para personal autorizado
+          AUDITCHECK — Uso exclusivo para personal autorizado
         </p>
       </div>
     </div>

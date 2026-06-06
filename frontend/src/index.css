@@ -2,6 +2,46 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Paleta de colores — modo oscuro (defecto) ────────────────────────────── */
+:root {
+  --ac-bg:              14 12 20;
+  --ac-surface:         21 18 31;
+  --ac-surface-2:       28 24 42;
+  --ac-border:          40 32 62;
+  --ac-border-2:        52 40 80;
+  --ac-primary:         139 92 246;
+  --ac-primary-hover:   124 58 237;
+  --ac-primary-dim:     30 15 56;
+  --ac-accent:          167 139 250;
+  --ac-success:         34 197 94;
+  --ac-warning:         245 158 11;
+  --ac-danger:          239 68 68;
+  --ac-critical:        220 38 38;
+  --ac-text-primary:    237 233 254;
+  --ac-text-secondary:  157 142 196;
+  --ac-text-muted:      107 95 138;
+}
+
+/* ── Paleta de colores — modo claro ───────────────────────────────────────── */
+:root.theme-light {
+  --ac-bg:              245 243 255;
+  --ac-surface:         255 255 255;
+  --ac-surface-2:       240 235 255;
+  --ac-border:          221 214 254;
+  --ac-border-2:        196 181 253;
+  --ac-primary:         124 58 237;
+  --ac-primary-hover:   109 40 217;
+  --ac-primary-dim:     237 233 254;
+  --ac-accent:          139 92 246;
+  --ac-success:         22 163 74;
+  --ac-warning:         217 119 6;
+  --ac-danger:          239 68 68;
+  --ac-critical:        220 38 38;
+  --ac-text-primary:    30 11 62;
+  --ac-text-secondary:  74 53 112;
+  --ac-text-muted:      124 92 178;
+}
+
 @layer base {
   * { box-sizing: border-box; }
 
@@ -12,16 +52,16 @@
   }
 
   body {
-    background-color: #eef2f7;
-    color: #1a2332;
+    background-color: rgb(var(--ac-bg));
+    color: rgb(var(--ac-text-primary));
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
 
   ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: #f4f7fb; }
-  ::-webkit-scrollbar-thumb { background: #c8d0dc; border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: #3b82f6; }
+  ::-webkit-scrollbar-track { background: rgb(var(--ac-surface-2)); }
+  ::-webkit-scrollbar-thumb { background: rgb(var(--ac-border-2)); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(var(--ac-primary)); }
 }
 
 @layer components {

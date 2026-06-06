@@ -1,26 +1,26 @@
-"""Estilos profesionales para el Excel de ÃUDITCHECK."""
+"""Estilos profesionales para el Excel de AUDITCHECK."""
 from __future__ import annotations
 from openpyxl.styles import (
     PatternFill, Font, Alignment, Border, Side, GradientFill
 )
 from openpyxl.styles.numbers import FORMAT_DATE_DATETIME
 
-# Paleta corporativa
-C_DARK_BG = "0F1117"
-C_HEADER_BG = "1A2744"
-C_ACCENT = "1E6FD9"
-C_LIGHT_BG = "F0F4FA"
+# Paleta corporativa — identidad AUDITCHECK (berenjena/violeta)
+C_DARK_BG = "0E0C14"
+C_HEADER_BG = "2D1B69"
+C_ACCENT = "7C3AED"
+C_LIGHT_BG = "F5F3FF"
 C_WHITE = "FFFFFF"
 C_BLACK = "000000"
-C_GRAY_LIGHT = "E8EDF5"
-C_GRAY_MED = "94A3B8"
-C_TEXT_DARK = "1E293B"
+C_GRAY_LIGHT = "EDE9FE"
+C_GRAY_MED = "9D8EC4"
+C_TEXT_DARK = "1E0B3E"
 
 # Colores de severidad
 C_CRITICAL = "DC2626"
 C_HIGH = "EA580C"
 C_MEDIUM = "D97706"
-C_LOW = "2563EB"
+C_LOW = "6D28D9"
 C_INFO = "6B7280"
 
 # Colores de estado

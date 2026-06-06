@@ -5,8 +5,17 @@ import { auditsApi, clientsApi } from '../lib/api'
 import type { AuditSummary, ClientSummary, ComparisonResult } from '../types'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { SEVERITY_CONFIG } from '../lib/utils'
+import { useThemeStore } from '../store/themeStore'
 
 export function ComparativesPage() {
+  const theme = useThemeStore((s) => s.theme)
+  const tooltipStyle = theme === 'dark'
+    ? { background: '#1c182a', border: '1px solid #28203e', borderRadius: 8, color: '#ede9fe' }
+    : { background: '#ffffff', border: '1px solid #ddd6fe', borderRadius: 8, color: '#1e0b3e' }
+  const barActual = theme === 'dark' ? '#8b5cf6' : '#7c3aed'
+  const barAnterior = theme === 'dark' ? '#4a4066' : '#c4b5fd'
+  const axisColor = theme === 'dark' ? '#9d8ec4' : '#4a3570'
+
   const [clientId, setClientId] = useState<number | null>(null)
   const [auditAId, setAuditAId] = useState<number | null>(null)
   const [auditBId, setAuditBId] = useState<number | null>(null)
@@ -144,12 +153,12 @@ export function ComparativesPage() {
             <h3 className="section-title mb-4">Evolución de hallazgos por severidad</h3>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={chartData}>
-                <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #dde3ec', borderRadius: 8, color: '#1a2332' }} />
+                <XAxis dataKey="name" tick={{ fill: axisColor, fontSize: 12 }} />
+                <YAxis tick={{ fill: axisColor, fontSize: 12 }} />
+                <Tooltip contentStyle={tooltipStyle} />
                 <Legend />
-                <Bar dataKey="Anterior" fill="#6b7280" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Actual" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Anterior" fill={barAnterior} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Actual" fill={barActual} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

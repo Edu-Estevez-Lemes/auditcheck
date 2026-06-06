@@ -51,6 +51,8 @@ export const credentialsApi = {
   create: (data: unknown) => api.post('/credentials/', data),
   update: (id: number, data: unknown) => api.put(`/credentials/${id}`, data),
   delete: (id: number) => api.delete(`/credentials/${id}`),
+  test: (id: number, data: { host: string; port: number }) =>
+    api.post(`/credentials/${id}/test`, data),
 }
 
 // Auditorías

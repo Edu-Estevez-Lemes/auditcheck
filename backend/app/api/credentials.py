@@ -3,10 +3,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..schemas.credential import CredentialCreate, CredentialUpdate, CredentialOut
+from ..schemas.credential import CredentialCreate, CredentialUpdate, CredentialOut, CredentialTestRequest
 from ..services.credential import (
     list_credentials, create_credential, update_credential,
-    delete_credential, get_credential_or_404,
+    delete_credential, get_credential_or_404, test_credential,
 )
 from ..services.auth import get_current_user
 from ..models.user import User
@@ -36,3 +36,13 @@ def update(cred_id: int, data: CredentialUpdate, db: Session = Depends(get_db), 
 @router.delete("/{cred_id}", status_code=204)
 def delete(cred_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     delete_credential(db, cred_id)
+
+
+@router.post("/{cred_id}/test")
+def test(
+    cred_id: int,
+    data: CredentialTestRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    return test_credential(db, cred_id, data.host, data.port)

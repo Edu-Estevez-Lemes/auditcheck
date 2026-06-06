@@ -3,12 +3,15 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Download, Server, AlertTriangle, Network, Shield,
-  Copy, Monitor, Globe, Terminal, Pencil, Sparkles, Key, X, Zap,
+  Copy, Monitor, Globe, Terminal, Pencil, Sparkles, Key, Zap,
+  ChevronUp, ChevronDown, ChevronsUpDown,
 } from 'lucide-react'
+import { useThemeStore } from '../store/themeStore'
 import toast from 'react-hot-toast'
 import { auditsApi, rdpApi, accessApi } from '../lib/api'
 import { DeviceEditModal } from '../components/DeviceEditModal'
 import { WebCredentialPanel } from '../components/WebCredentialPanel'
+import { CredentialQuickPanel } from '../components/CredentialQuickPanel'
 import type { WebCredData } from '../components/WebCredentialPanel'
 import type { Audit, Device, Finding } from '../types'
 import { formatDate, SEVERITY_CONFIG, DEVICE_TYPE_LABELS } from '../lib/utils'
@@ -27,7 +30,7 @@ interface CategoryTab {
   types: string[]
 }
 
-const CATEGORY_TABS: CategoryTab[] = [
+const STATIC_CATEGORY_TABS: CategoryTab[] = [
   { key: 'all',            label: 'Todos',           types: [] },
   { key: 'windows_server', label: 'Windows Server',  types: ['windows_server'] },
   { key: 'windows_workstation', label: 'Windows PC', types: ['windows_workstation'] },
@@ -38,8 +41,13 @@ const CATEGORY_TABS: CategoryTab[] = [
   { key: 'nas',            label: 'NAS',             types: ['nas'] },
   { key: 'switch',         label: 'Switching',       types: ['switch'] },
   { key: 'printer',        label: 'Impresoras',      types: ['printer'] },
+  { key: 'ilo',            label: 'HP iLO',          types: ['ilo'] },
+  { key: 'idrac',          label: 'Dell iDRAC',      types: ['idrac'] },
   { key: 'unknown',        label: 'Desconocidos',    types: ['unknown', 'custom'] },
 ]
+
+// Tipos cubiertos por tabs estáticas (para detectar tipos "huérfanos")
+const STATIC_COVERED_TYPES = new Set(STATIC_CATEGORY_TABS.flatMap(c => c.types))
 
 function matchesCategory(device: Device, cat: CategoryTab): boolean {
   if (cat.key === 'all') return true
@@ -179,6 +187,16 @@ function DeviceBadges({ device }: { device: Device }) {
   )
 }
 
+// ─── Icono de ordenación ─────────────────────────────────────────────────────
+
+function SortIcon({ field, current, dir }: { field: string; current: string | null; dir: 'asc' | 'desc' }) {
+  if (current !== field)
+    return <ChevronsUpDown size={11} className="opacity-25 group-hover:opacity-60 transition-opacity" />
+  return dir === 'asc'
+    ? <ChevronUp size={11} className="text-primary" />
+    : <ChevronDown size={11} className="text-primary" />
+}
+
 // ─── Componente principal ────────────────────────────────────────────────────
 
 export function AuditDetail() {
@@ -186,13 +204,21 @@ export function AuditDetail() {
   const auditId = Number(id)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const theme = useThemeStore((s) => s.theme)
+  const tooltipStyle = theme === 'dark'
+    ? { background: '#1c182a', border: '1px solid #28203e', borderRadius: 8, color: '#ede9fe' }
+    : { background: '#ffffff', border: '1px solid #ddd6fe', borderRadius: 8, color: '#1e0b3e' }
 
   const [tab, setTab] = useState<'devices' | 'findings'>('devices')
   const [downloading, setDownloading] = useState(false)
   const [filterSev, setFilterSev] = useState<string>('all')
   const [categoryKey, setCategoryKey] = useState<string>('all')
   const [search, setSearch] = useState('')
+  const [filterCredentials, setFilterCredentials] = useState(false)
+  const [sortField, setSortField] = useState<string | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [editingDevice, setEditingDevice] = useState<Device | null>(null)
+  const [credPanel, setCredPanel] = useState<{ open: boolean; device: Device | null }>({ open: false, device: null })
   const [webPanel, setWebPanel] = useState<{
     open: boolean
     loading: boolean
@@ -219,21 +245,52 @@ export function AuditDetail() {
   const devices = devicesQ.data ?? []
   const findings = findingsQ.data ?? []
 
+  // Pestañas dinámicas: añade una por cada tipo de dispositivo no cubierto por tabs estáticas
+  const allCategoryTabs = useMemo(() => {
+    const extra = new Set<string>()
+    devices.forEach(d => {
+      if (!STATIC_COVERED_TYPES.has(d.device_type) && d.device_type !== 'unknown' && d.device_type !== 'custom') {
+        extra.add(d.device_type)
+      }
+    })
+    const dynamic: CategoryTab[] = Array.from(extra).map(type => ({
+      key: type,
+      label: DEVICE_TYPE_LABELS[type] ?? type,
+      types: [type],
+    }))
+    // Insertar dinámicas antes de "Desconocidos" (último tab estático)
+    return [
+      ...STATIC_CATEGORY_TABS.slice(0, -1),
+      ...dynamic,
+      STATIC_CATEGORY_TABS[STATIC_CATEGORY_TABS.length - 1],
+    ]
+  }, [devices])
+
   // Contar dispositivos por categoría
   const categoryCounts = useMemo(() => {
     const map: Record<string, number> = { all: devices.length }
-    CATEGORY_TABS.slice(1).forEach(cat => {
+    allCategoryTabs.slice(1).forEach(cat => {
       map[cat.key] = devices.filter(d => matchesCategory(d, cat)).length
     })
     return map
-  }, [devices])
+  }, [devices, allCategoryTabs])
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDir('asc')
+    }
+  }
 
   // Filtro de dispositivos
   const filteredDevices = useMemo(() => {
-    const cat = CATEGORY_TABS.find(c => c.key === categoryKey) ?? CATEGORY_TABS[0]
+    const cat = allCategoryTabs.find(c => c.key === categoryKey) ?? allCategoryTabs[0]
     const q = search.toLowerCase()
     return devices.filter(d => {
       if (!matchesCategory(d, cat)) return false
+      if (filterCredentials && !d.credential_name) return false
       if (!q) return true
       return (
         d.ip_address.includes(q) ||
@@ -245,7 +302,45 @@ export function AuditDetail() {
         (DEVICE_TYPE_LABELS[d.device_type] ?? '').toLowerCase().includes(q)
       )
     })
-  }, [devices, categoryKey, search])
+  }, [devices, categoryKey, search, filterCredentials, allCategoryTabs])
+
+  const sortedDevices = useMemo(() => {
+    if (!sortField) return filteredDevices
+    return [...filteredDevices].sort((a, b) => {
+      let aVal: string | number = ''
+      let bVal: string | number = ''
+      switch (sortField) {
+        case 'ip': {
+          const ip2n = (ip: string) => ip.split('.').reduce((acc, n) => acc * 256 + parseInt(n, 10), 0)
+          aVal = ip2n(a.ip_address)
+          bVal = ip2n(b.ip_address)
+          break
+        }
+        case 'hostname':
+          aVal = (a.display_name || a.hostname || '').toLowerCase()
+          bVal = (b.display_name || b.hostname || '').toLowerCase()
+          break
+        case 'type':
+          aVal = (DEVICE_TYPE_LABELS[a.device_type] ?? a.device_type).toLowerCase()
+          bVal = (DEVICE_TYPE_LABELS[b.device_type] ?? b.device_type).toLowerCase()
+          break
+        case 'mac':
+          aVal = (a.mac_address || '').toLowerCase()
+          bVal = (b.mac_address || '').toLowerCase()
+          break
+        case 'os':
+          aVal = (a.os_type || '').toLowerCase()
+          bVal = (b.os_type || '').toLowerCase()
+          break
+        case 'rtt':
+          aVal = a.response_time_ms ?? Infinity
+          bVal = b.response_time_ms ?? Infinity
+          break
+      }
+      const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [filteredDevices, sortField, sortDir])
 
   const filteredFindings = filterSev === 'all' ? findings : findings.filter(f => f.severity === filterSev)
 
@@ -363,16 +458,6 @@ export function AuditDetail() {
     }
   }
 
-  async function handleUnassignCredential(device: Device) {
-    try {
-      await auditsApi.updateDevice(auditId, device.id, { credential_id: null })
-      await queryClient.invalidateQueries({ queryKey: ['audit-devices', auditId] })
-      toast.success(`Credencial desasignada de ${device.ip_address}`)
-    } catch {
-      toast.error('Error al desasignar la credencial')
-    }
-  }
-
   if (auditQ.isLoading) return (
     <div className="flex items-center justify-center h-64">
       <span className="animate-spin h-6 w-6 border-2 border-primary/30 border-t-primary rounded-full" />
@@ -428,7 +513,7 @@ export function AuditDetail() {
                 <Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={65}>
                   {pieData.map((e, i) => <Cell key={i} fill={e.color} />)}
                 </Pie>
-                <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #dde3ec', borderRadius: 8, color: '#1a2332' }} />
+                <Tooltip contentStyle={tooltipStyle} />
               </PieChart>
             </ResponsiveContainer>
           ) : <p className="text-text-muted text-sm text-center py-8">Sin hallazgos</p>}
@@ -475,7 +560,7 @@ export function AuditDetail() {
       {tab === 'devices' && (
         <div className="space-y-3">
           {/* Barra de búsqueda */}
-          <div className="flex gap-3 items-center">
+          <div className="flex gap-2 items-center">
             <input
               className="input flex-1 text-sm"
               placeholder="Buscar por IP, hostname, fabricante, tipo..."
@@ -484,17 +569,35 @@ export function AuditDetail() {
             />
             {search && (
               <button
-                className="text-xs text-text-muted hover:text-text-primary"
+                className="text-xs text-text-muted hover:text-text-primary shrink-0"
                 onClick={() => setSearch('')}
               >
                 Limpiar
               </button>
             )}
+            <button
+              onClick={() => setFilterCredentials(f => !f)}
+              title={filterCredentials
+                ? 'Mostrando solo hosts con credenciales — pulsa para ver todos'
+                : 'Filtrar: mostrar solo hosts con credenciales registradas'}
+              className={`shrink-0 p-2 rounded-lg border transition-all ${
+                filterCredentials
+                  ? 'border-primary bg-primary/15 ring-1 ring-primary/30'
+                  : 'border-border hover:border-primary/40 opacity-50 hover:opacity-100'
+              }`}
+            >
+              <img
+                src="/api/v1/branding/emoji1"
+                alt="Con credenciales"
+                className="w-5 h-5 object-contain"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+            </button>
           </div>
 
           {/* Filtros de categoría */}
           <div className="flex gap-1.5 flex-wrap">
-            {CATEGORY_TABS.map(cat => {
+            {allCategoryTabs.map(cat => {
               const count = categoryCounts[cat.key] ?? 0
               if (cat.key !== 'all' && count === 0) return null
               return (
@@ -521,26 +624,51 @@ export function AuditDetail() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>IP</th>
-                  <th>Hostname / Nombre</th>
-                  <th>Tipo</th>
-                  <th>MAC / Fabricante</th>
-                  <th>OS</th>
+                  {[
+                    { label: 'IP',              field: 'ip'       },
+                    { label: 'Hostname / Nombre', field: 'hostname' },
+                    { label: 'Tipo',            field: 'type'     },
+                    { label: 'MAC / Fabricante', field: 'mac'      },
+                    { label: 'OS',              field: 'os'       },
+                  ].map(({ label, field }) => (
+                    <th
+                      key={field}
+                      onClick={() => handleSort(field)}
+                      className="cursor-pointer select-none hover:text-primary group transition-colors"
+                    >
+                      <span className="flex items-center gap-1">
+                        {label}
+                        <SortIcon field={field} current={sortField} dir={sortDir} />
+                      </span>
+                    </th>
+                  ))}
                   <th>Puertos</th>
-                  <th>RTT</th>
+                  <th
+                    onClick={() => handleSort('rtt')}
+                    className="cursor-pointer select-none hover:text-primary group transition-colors"
+                  >
+                    <span className="flex items-center gap-1">
+                      RTT
+                      <SortIcon field="rtt" current={sortField} dir={sortDir} />
+                    </span>
+                  </th>
                   <th>Acceso</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {filteredDevices.length === 0 && (
+                {sortedDevices.length === 0 && (
                   <tr>
                     <td colSpan={9} className="text-center py-8 text-text-muted">
-                      {search ? `Sin resultados para "${search}"` : 'Sin dispositivos en esta categoría'}
+                      {filterCredentials
+                        ? 'Ningún host tiene credenciales registradas en esta selección'
+                        : search
+                          ? `Sin resultados para "${search}"`
+                          : 'Sin dispositivos en esta categoría'}
                     </td>
                   </tr>
                 )}
-                {filteredDevices.map(d => {
+                {sortedDevices.map(d => {
                   const accessBtns = buildAccessButtons(d, auditId)
                   const displayLabel = d.display_name || d.hostname
                   return (
@@ -548,7 +676,18 @@ export function AuditDetail() {
                       {/* IP + badges */}
                       <td>
                         <div className="space-y-1">
-                          <span className="font-mono text-sm text-primary">{d.ip_address}</span>
+                          <div className="flex items-center gap-1.5">
+                            {d.credential_name && (
+                              <img
+                                src="/api/v1/branding/emoji1"
+                                alt=""
+                                title={`Credenciales registradas: ${d.credential_name}`}
+                                className="w-5 h-5 shrink-0 object-contain"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                              />
+                            )}
+                            <span className="font-mono text-sm text-primary">{d.ip_address}</span>
+                          </div>
                           <DeviceBadges device={d} />
                           {d.credential_name && (
                             <span
@@ -653,25 +792,23 @@ export function AuditDetail() {
                             </Fragment>
                           ))}
 
-                          {/* Gestión rápida de credencial RDP */}
-                          {d.credential_name && (
-                            <>
-                              <button
-                                title={`Editar credencial RDP: ${d.credential_name}`}
-                                onClick={() => setEditingDevice(d)}
-                                className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-indigo-500/15 text-indigo-400 hover:bg-indigo-500/25 transition-colors"
-                              >
-                                <Key size={11} />
-                              </button>
-                              <button
-                                title={`Quitar credencial RDP: ${d.credential_name}`}
-                                onClick={() => handleUnassignCredential(d)}
-                                className="inline-flex items-center gap-1 text-xs px-1.5 py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
-                              >
-                                <X size={11} />
-                              </button>
-                            </>
-                          )}
+                          {/* Gestión rápida de credenciales */}
+                          <button
+                            title={d.credential_name
+                              ? `Gestionar credencial: ${d.credential_name}`
+                              : 'Añadir credencial a este host'}
+                            onClick={() => setCredPanel({ open: true, device: d })}
+                            className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors ${
+                              d.credential_name
+                                ? 'bg-indigo-500/15 text-indigo-400 hover:bg-indigo-500/25'
+                                : 'bg-surface-2 text-text-muted hover:text-primary hover:bg-primary/10'
+                            }`}
+                          >
+                            <Key size={11} />
+                            {d.credential_name
+                              ? (d.credential_name.length > 14 ? d.credential_name.slice(0, 14) + '…' : d.credential_name)
+                              : 'Credenciales'}
+                          </button>
 
                           {/* SMB si aplica */}
                           {d.ports.some(p => p.port_number === 445) && (
@@ -720,9 +857,12 @@ export function AuditDetail() {
             </table>
           </div>
 
-          {filteredDevices.length > 0 && (
+          {sortedDevices.length > 0 && (
             <p className="text-xs text-text-muted text-right">
-              {filteredDevices.length} de {devices.length} dispositivos
+              {sortedDevices.length} de {devices.length} dispositivos
+              {filterCredentials && (
+                <span className="ml-2 text-primary">· filtro: con credenciales</span>
+              )}
             </p>
           )}
         </div>
@@ -812,6 +952,18 @@ export function AuditDetail() {
           device={editingDevice}
           auditId={auditId}
           onClose={() => setEditingDevice(null)}
+        />
+      )}
+
+      {/* Panel rápido de credenciales */}
+      {credPanel.device && audit && (
+        <CredentialQuickPanel
+          isOpen={credPanel.open}
+          device={credPanel.device}
+          auditId={auditId}
+          clientId={audit.client_id}
+          onClose={() => setCredPanel(prev => ({ ...prev, open: false }))}
+          onDeviceUpdate={() => queryClient.invalidateQueries({ queryKey: ['audit-devices', auditId] })}
         />
       )}
     </div>

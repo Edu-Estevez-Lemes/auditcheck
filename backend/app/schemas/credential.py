@@ -53,3 +53,8 @@ class CredentialOut(BaseModel):
     has_password: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class CredentialTestRequest(BaseModel):
+    host: str
+    port: int

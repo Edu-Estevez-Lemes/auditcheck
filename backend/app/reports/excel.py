@@ -1,5 +1,5 @@
 """
-Generador de informes Excel profesionales para ÃUDITCHECK.
+Generador de informes Excel profesionales para AUDITCHECK.
 14 hojas: Resumen, Inventario, Red y Puertos, Hardware, Backups,
 VMware, FortiGate, SNMP, Windows, NAS, iLO/iDRAC, Hallazgos,
 Comparativa, Recomendaciones + hoja oculta de metadatos.
