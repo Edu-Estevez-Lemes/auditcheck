@@ -430,8 +430,9 @@ export function AuditDetail() {
       const url = btn.webUrl ?? getDeviceWebUrl(device)
       if (!url) return
 
-      // Abrir URL siempre en nueva pestaña
-      window.open(url, '_blank', 'noopener,noreferrer')
+      // Abrir URL en una ventana nueva independiente (no en pestaña del navegador actual)
+      const winFeatures = 'noopener,noreferrer,popup=yes,width=1366,height=850,menubar=no,toolbar=no,location=no,status=no'
+      window.open(url, '_blank', winFeatures)
 
       // Si hay credencial → mostrar panel de asistencia al login
       if (btn.credentialName && device.credential_id) {

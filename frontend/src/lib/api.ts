@@ -78,6 +78,8 @@ export const auditsApi = {
   downloadExcel: (id: number) =>
     api.get(`/audits/${id}/report/excel`, { responseType: 'blob' }),
   compare: (aId: number, bId: number) => api.get(`/audits/compare/${aId}/${bId}`),
+  compareExcel: (aId: number, bId: number) =>
+    api.get(`/audits/compare/${aId}/${bId}/excel`, { responseType: 'blob' }),
 }
 
 // Escaneo

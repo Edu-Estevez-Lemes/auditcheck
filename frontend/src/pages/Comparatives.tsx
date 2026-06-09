@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { GitCompare, ArrowRight, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { GitCompare, ArrowRight, TrendingUp, TrendingDown, Minus, Download } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { auditsApi, clientsApi } from '../lib/api'
 import type { AuditSummary, ClientSummary, ComparisonResult } from '../types'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts'
@@ -21,6 +22,7 @@ export function ComparativesPage() {
   const [auditBId, setAuditBId] = useState<number | null>(null)
   const [result, setResult] = useState<ComparisonResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [downloadingExcel, setDownloadingExcel] = useState(false)
 
   const { data: clients = [] } = useQuery<ClientSummary[]>({
     queryKey: ['clients'],
@@ -44,6 +46,26 @@ export function ComparativesPage() {
       console.error(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDownloadExcel = async () => {
+    if (!auditAId || !auditBId) return
+    setDownloadingExcel(true)
+    try {
+      const { data } = await auditsApi.compareExcel(auditAId, auditBId)
+      const clientName = clients.find((c) => c.id === clientId)?.name?.replace(/\s+/g, '_') ?? 'cliente'
+      const url = URL.createObjectURL(new Blob([data]))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `AUDITCHECK_Comparativa_${clientName}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Excel comparativa generado')
+    } catch {
+      toast.error('Error al generar el Excel comparativa')
+    } finally {
+      setDownloadingExcel(false)
     }
   }
 
@@ -123,6 +145,14 @@ export function ComparativesPage() {
       {/* Resultados */}
       {result && (
         <div className="space-y-5">
+          <div className="flex items-center justify-between">
+            <h3 className="section-title">Resultado de la comparativa</h3>
+            <button className="btn-success" onClick={handleDownloadExcel} disabled={downloadingExcel}>
+              <Download size={15} />
+              {downloadingExcel ? 'Generando...' : 'Generar Excel comparativa'}
+            </button>
+          </div>
+
           {/* KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="card text-center">
@@ -163,45 +193,71 @@ export function ComparativesPage() {
             </ResponsiveContainer>
           </div>
 
-          {/* Cambios */}
+          {/* Cambios — dispositivos y hallazgos */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <ChangeSection
               title="Dispositivos nuevos"
-              items={result.new_devices as Record<string, string>[]}
+              items={result.new_devices}
               icon={<TrendingUp size={16} className="text-warning" />}
               render={(d) => `${d.ip} ${d.hostname ? `(${d.hostname})` : ''}`}
               emptyMsg="Sin dispositivos nuevos"
             />
             <ChangeSection
               title="Dispositivos desaparecidos"
-              items={result.removed_devices as Record<string, string>[]}
+              items={result.removed_devices}
               icon={<TrendingDown size={16} className="text-critical" />}
               render={(d) => `${d.ip} ${d.hostname ? `(${d.hostname})` : ''}`}
               emptyMsg="Sin dispositivos eliminados"
             />
             <ChangeSection
-              title="Hallazgos persistentes"
-              items={result.persistent_findings as Record<string, string>[]}
-              icon={<Minus size={16} className="text-text-muted" />}
-              render={(f) => f.title}
-              emptyMsg="Sin hallazgos persistentes"
+              title="IPs nuevas"
+              items={result.new_ips.map((ip) => ({ ip }))}
+              icon={<TrendingUp size={16} className="text-warning" />}
+              render={(d) => d.ip}
+              emptyMsg="Sin IPs nuevas"
             />
           </div>
 
+          {/* Cambios — puertos */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <ChangeSection
+              title="Puertos nuevos"
+              items={result.new_ports}
+              icon={<TrendingUp size={16} className="text-warning" />}
+              render={(p) => `${p.ip}${p.hostname ? ` (${p.hostname})` : ''} · puerto ${p.port}`}
+              emptyMsg="Sin puertos nuevos"
+            />
+            <ChangeSection
+              title="Puertos cerrados"
+              items={result.closed_ports}
+              icon={<TrendingDown size={16} className="text-success" />}
+              render={(p) => `${p.ip}${p.hostname ? ` (${p.hostname})` : ''} · puerto ${p.port}`}
+              emptyMsg="Sin puertos cerrados"
+            />
+          </div>
+
+          {/* Cambios — hallazgos */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <ChangeSection
               title="Hallazgos nuevos"
-              items={result.new_findings as Record<string, string>[]}
+              items={result.new_findings}
               icon={<TrendingUp size={16} className="text-warning" />}
               render={(f) => f.title}
               emptyMsg="Sin nuevos hallazgos"
             />
             <ChangeSection
               title="Hallazgos resueltos"
-              items={result.resolved_findings as Record<string, string>[]}
+              items={result.resolved_findings}
               icon={<TrendingDown size={16} className="text-success" />}
               render={(f) => f.title}
               emptyMsg="Sin hallazgos resueltos"
+            />
+            <ChangeSection
+              title="Hallazgos persistentes"
+              items={result.persistent_findings}
+              icon={<Minus size={16} className="text-text-muted" />}
+              render={(f) => f.title}
+              emptyMsg="Sin hallazgos persistentes"
             />
           </div>
         </div>
@@ -210,13 +266,18 @@ export function ComparativesPage() {
   )
 }
 
-function ChangeSection({ title, items, icon, render, emptyMsg }: {
+const COLLAPSED_LIMIT = 8
+
+function ChangeSection<T>({ title, items, icon, render, emptyMsg }: {
   title: string
-  items: Record<string, string>[]
+  items: T[]
   icon: React.ReactNode
-  render: (item: Record<string, string>) => string
+  render: (item: T) => string
   emptyMsg: string
 }) {
+  const [expanded, setExpanded] = useState(false)
+  const visible = expanded ? items : items.slice(0, COLLAPSED_LIMIT)
+
   return (
     <div className="card">
       <div className="flex items-center gap-2 mb-3">
@@ -226,16 +287,27 @@ function ChangeSection({ title, items, icon, render, emptyMsg }: {
       {items.length === 0 ? (
         <p className="text-text-muted text-xs">{emptyMsg}</p>
       ) : (
-        <ul className="space-y-1">
-          {items.slice(0, 8).map((item, i) => (
-            <li key={i} className="text-xs text-text-secondary bg-surface-2 rounded px-2 py-1 truncate">
-              {render(item)}
-            </li>
-          ))}
-          {items.length > 8 && (
-            <li className="text-xs text-text-muted">+{items.length - 8} más...</li>
+        <>
+          <ul className="space-y-1">
+            {visible.map((item, i) => {
+              const text = render(item)
+              return (
+                <li key={i} className="text-xs text-text-secondary bg-surface-2 rounded px-2 py-1 truncate" title={text}>
+                  {text}
+                </li>
+              )
+            })}
+          </ul>
+          {items.length > COLLAPSED_LIMIT && (
+            <button
+              type="button"
+              className="text-xs text-primary hover:underline mt-2"
+              onClick={() => setExpanded((e) => !e)}
+            >
+              {expanded ? 'Ver menos' : `Ver todos (${items.length})`}
+            </button>
           )}
-        </ul>
+        </>
       )}
     </div>
   )

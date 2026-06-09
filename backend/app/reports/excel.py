@@ -13,7 +13,11 @@ from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
-from openpyxl.chart import BarChart, PieChart, Reference
+from openpyxl.chart import BarChart, PieChart, DoughnutChart, Reference
+from openpyxl.chart.series import DataPoint
+from openpyxl.chart.shapes import GraphicalProperties
+from openpyxl.chart.label import DataLabelList
+from openpyxl.styles import Alignment
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.utils import get_column_letter
 
@@ -25,6 +29,7 @@ from .styles import (
     STYLE_ROW_EVEN, STYLE_ROW_ODD, STYLE_LABEL, STYLE_VALUE,
     SEVERITY_STYLES, SEVERITY_LABELS, DEVICE_TYPE_LABELS,
     STATUS_STYLES, C_HEADER_BG, C_ACCENT, C_WHITE,
+    C_CRITICAL, C_HIGH, C_MEDIUM, C_LOW, C_INFO,
 )
 from ..config import settings
 from sqlalchemy.orm import Session
@@ -50,6 +55,14 @@ def _write_row(ws: Worksheet, row: int, values: list, style: dict) -> None:
     for col, val in enumerate(values, 1):
         cell = ws.cell(row=row, column=col, value=_clean(val))
         apply_style(cell, style)
+
+
+def _device_type_label(device_type: str | None, custom_category: str | None = None) -> str:
+    """Etiqueta visible del tipo de dispositivo — usa la categoría personalizada
+    cuando el tipo es 'custom', igual que en la interfaz (evita exportar 'custom' literal)."""
+    if device_type == "custom" and custom_category:
+        return custom_category
+    return DEVICE_TYPE_LABELS.get(device_type or "", device_type or "")
 
 
 def _add_logo(ws: Worksheet, logo_path: Path | None, anchor: str = "A1") -> None:
@@ -227,10 +240,13 @@ def _sheet_inventario(wb, devices: list[Device]):
     ws.sheet_view.showGridLines = False
     ws.freeze_panes = "A2"
 
-    headers = ["IP", "Hostname", "NetBIOS", "MAC", "Fabricante", "SO/Tipo", "Tipo Dispositivo", "Estado", "RTT (ms)", "Puertos Abiertos"]
+    headers = [
+        "IP", "Hostname", "Nombre visible", "NetBIOS", "MAC", "Fabricante", "SO/Tipo",
+        "Tipo Dispositivo", "Ubicación", "Observaciones", "Estado", "RTT (ms)", "Puertos Abiertos",
+    ]
     _write_row(ws, 1, headers, STYLE_HEADER)
 
-    widths = [16, 28, 22, 18, 22, 22, 20, 10, 10, 14]
+    widths = [16, 28, 26, 22, 18, 22, 22, 20, 20, 36, 10, 10, 14]
     for i, w in enumerate(widths, 1):
         _set_col_width(ws, i, w)
 
@@ -239,11 +255,14 @@ def _sheet_inventario(wb, devices: list[Device]):
         values = [
             d.ip_address,
             d.hostname or "",
+            d.display_name or "",
             d.netbios_name or "",
             d.mac_address or "",
             d.manufacturer or "",
             d.os_type or "",
-            DEVICE_TYPE_LABELS.get(d.device_type, d.device_type),
+            _device_type_label(d.device_type, d.custom_category),
+            d.location or "",
+            d.observations or "",
             "Activo" if d.is_up else "Inactivo",
             round(d.response_time_ms, 1) if d.response_time_ms else "",
             len(d.ports),
@@ -464,3 +483,349 @@ def _sheet_metadata(wb, audit, client, technician):
     for row_idx, (key, value) in enumerate(meta, 2):
         ws.cell(row=row_idx, column=1, value=key)
         ws.cell(row=row_idx, column=2, value=str(value))
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Excel de COMPARATIVA independiente (entre dos revisiones de un cliente)
+# ════════════════════════════════════════════════════════════════════════════
+
+_CMP_SEV_ORDER = ["critical", "high", "medium", "low", "informational"]
+_CMP_SEV_COLORS = {
+    "critical": C_CRITICAL, "high": C_HIGH, "medium": C_MEDIUM,
+    "low": C_LOW, "informational": C_INFO,
+}
+_CMP_COLOR_ANTERIOR = "4A4066"
+_CMP_COLOR_ACTUAL = C_ACCENT
+
+
+def generate_comparison_excel_report(
+    db: Session,
+    audit_a_id: int,
+    audit_b_id: int,
+    output_path: Path | None = None,
+) -> bytes:
+    """Genera un informe Excel específico del análisis comparativo entre dos revisiones."""
+    from ..services.comparison import compare_audits
+
+    audit_a = db.query(Audit).filter(Audit.id == audit_a_id).first()
+    audit_b = db.query(Audit).filter(Audit.id == audit_b_id).first()
+    if not audit_a or not audit_b:
+        raise ValueError("Una o ambas auditorías no existen")
+
+    client = db.query(Client).filter(Client.id == audit_b.client_id).first()
+    technician = db.query(User).filter(User.id == audit_b.technician_id).first() if audit_b.technician_id else None
+
+    data = compare_audits(db, audit_a_id, audit_b_id).to_dict()
+
+    findings_b = db.query(Finding).filter(Finding.audit_id == audit_b_id).all()
+    rec_titles = {f["title"] for f in data["new_findings"]} | {f["title"] for f in data["persistent_findings"]}
+    recommendations = [f for f in findings_b if f.recommendation and f.title in rec_titles]
+
+    client_logo = Path(client.logo_path) if client and client.logo_path else None
+    corp_logo = settings.BRANDING_DIR / "logo.png"
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    _sheet_cmp_resumen(wb, audit_a, audit_b, client, technician, data, client_logo, corp_logo)
+    _sheet_cmp_dispositivos(wb, data)
+    _sheet_cmp_puertos(wb, data)
+    _sheet_cmp_riesgos(wb, data)
+    _sheet_cmp_recomendaciones(wb, recommendations)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    out = buf.getvalue()
+
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(out)
+
+    return out
+
+
+def _style_bar_series(chart, colors: list[str]) -> None:
+    for series, color in zip(chart.series, colors):
+        series.graphicalProperties = GraphicalProperties(solidFill=color)
+
+
+def _style_donut_series(chart, colors: list[str]) -> None:
+    if not chart.series:
+        return
+    series = chart.series[0]
+    series.data_points = [DataPoint(idx=i, spPr=GraphicalProperties(solidFill=c)) for i, c in enumerate(colors)]
+    series.dLbls = DataLabelList(showVal=True)
+
+
+def _cmp_table_block(ws, row: int, title: str, items: list[dict], headers: list[str], row_fn) -> int:
+    """Escribe un bloque de tabla (título + cabecera + filas) y devuelve la siguiente fila libre."""
+    n_cols = max(len(headers), 1)
+    last_col = get_column_letter(n_cols)
+
+    ws.merge_cells(f"A{row}:{last_col}{row}")
+    ws.cell(row=row, column=1, value=f"{title} ({len(items)})")
+    apply_style(ws.cell(row=row, column=1), STYLE_HEADER)
+    row += 1
+
+    _write_row(ws, row, headers, STYLE_SUBHEADER)
+    row += 1
+
+    if not items:
+        ws.merge_cells(f"A{row}:{last_col}{row}")
+        ws.cell(row=row, column=1, value="Sin cambios detectados")
+        apply_style(ws.cell(row=row, column=1), STYLE_VALUE)
+        row += 1
+    else:
+        for item in items:
+            style = STYLE_ROW_EVEN if row % 2 == 0 else STYLE_ROW_ODD
+            _write_row(ws, row, row_fn(item), style)
+            row += 1
+
+    return row + 1
+
+
+def _sheet_cmp_resumen(wb, audit_a, audit_b, client, technician, data: dict, client_logo, corp_logo):
+    ws = wb.create_sheet("Resumen Comparativa")
+    ws.sheet_view.showGridLines = False
+
+    _add_logo(ws, corp_logo, "A1")
+    if client_logo:
+        _add_logo(ws, client_logo, "G1")
+
+    ws.row_dimensions[4].height = 40
+    ws.merge_cells("A4:H4")
+    cell = ws["A4"]
+    cell.value = "ANÁLISIS COMPARATIVO ENTRE REVISIONES"
+    apply_style(cell, STYLE_TITLE)
+
+    row = 6
+    ws.merge_cells(f"A{row}:H{row}")
+    ws.cell(row=row, column=1, value="DATOS DE LA COMPARATIVA")
+    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER)
+    row += 1
+
+    info_pairs = [
+        ("Cliente:", client.name if client else ""),
+        ("Técnico:", technician.full_name if technician else ""),
+        ("Revisión anterior:", audit_a.name),
+        ("Fecha revisión anterior:", audit_a.completed_at.strftime("%d/%m/%Y %H:%M") if audit_a.completed_at else ""),
+        ("Revisión actual:", audit_b.name),
+        ("Fecha revisión actual:", audit_b.completed_at.strftime("%d/%m/%Y %H:%M") if audit_b.completed_at else ""),
+    ]
+    for label, value in info_pairs:
+        _write_info_pair(ws, row, label, value, col_start=1, col_end=5)
+        row += 1
+
+    row += 1
+    ws.merge_cells(f"A{row}:H{row}")
+    ws.cell(row=row, column=1, value="RESUMEN COMPARATIVO")
+    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER)
+    row += 1
+
+    devices_diff = data["devices_after"] - data["devices_before"]
+    findings_before_total = sum(data["findings_before"].values())
+    findings_after_total = sum(data["findings_after"].values())
+    findings_diff = findings_after_total - findings_before_total
+
+    kpis = [
+        ("Dispositivos antes", data["devices_before"], None),
+        ("Dispositivos ahora", data["devices_after"], "warning" if devices_diff > 0 else ("ok" if devices_diff < 0 else None)),
+        ("Dispositivos nuevos", len(data["new_devices"]), "warning" if data["new_devices"] else None),
+        ("Desaparecidos", len(data["removed_devices"]), "failed" if data["removed_devices"] else None),
+        ("Hallazgos antes", findings_before_total, None),
+        ("Hallazgos ahora", findings_after_total, "failed" if findings_diff > 0 else ("ok" if findings_diff < 0 else None)),
+        ("Riesgos nuevos", len(data["new_findings"]), "warning" if data["new_findings"] else None),
+        ("Riesgos resueltos", len(data["resolved_findings"]), "ok" if data["resolved_findings"] else None),
+    ]
+    _write_row(ws, row, [k[0] for k in kpis], STYLE_HEADER)
+    row += 1
+    for col_idx, (_label, value, status) in enumerate(kpis, 1):
+        c = ws.cell(row=row, column=col_idx, value=value)
+        style = STATUS_STYLES.get(status) if status else None
+        apply_style(c, {**style, "border": STYLE_HEADER["border"]} if style else STYLE_VALUE)
+    row += 2
+
+    summary_text = (
+        f"Entre '{audit_a.name}' y '{audit_b.name}' se detectaron {len(data['new_devices'])} dispositivo(s) nuevo(s) "
+        f"y {len(data['removed_devices'])} desaparecido(s) (de {data['devices_before']} a {data['devices_after']} en total). "
+        f"Los hallazgos pasaron de {findings_before_total} a {findings_after_total} "
+        f"({'+' if findings_diff >= 0 else ''}{findings_diff}): {len(data['new_findings'])} nuevo(s), "
+        f"{len(data['resolved_findings'])} resuelto(s) y {len(data['persistent_findings'])} persistente(s). "
+        f"Se detectaron {len(data['new_ports'])} puerto(s) nuevo(s) abierto(s) y {len(data['closed_ports'])} puerto(s) cerrado(s)."
+    )
+    ws.merge_cells(f"A{row}:H{row + 2}")
+    ws.cell(row=row, column=1, value=summary_text)
+    apply_style(ws.cell(row=row, column=1), {**STYLE_VALUE, "alignment": Alignment(horizontal="left", vertical="top", wrap_text=True)})
+    row += 4
+
+    for i, w in enumerate([20, 20, 16, 16, 16, 16, 16, 16], 1):
+        _set_col_width(ws, i, w)
+
+    # ── Tablas auxiliares + gráficas (KPI visual) ───────────────────────────
+    ws.merge_cells(f"A{row}:H{row}")
+    ws.cell(row=row, column=1, value="EVOLUCIÓN VISUAL")
+    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER)
+    row += 1
+
+    t1_row = row
+    _write_row(ws, t1_row, ["Dispositivos", "Anterior", "Actual"], STYLE_LABEL)
+    _write_row(ws, t1_row + 1, ["Total", data["devices_before"], data["devices_after"]], STYLE_VALUE)
+
+    t2_row = t1_row + 4
+    _write_row(ws, t2_row, ["Severidad", "Anterior", "Actual"], STYLE_LABEL)
+    for i, sev in enumerate(_CMP_SEV_ORDER, 1):
+        _write_row(ws, t2_row + i, [
+            SEVERITY_LABELS.get(sev, sev),
+            data["findings_before"].get(sev, 0),
+            data["findings_after"].get(sev, 0),
+        ], STYLE_VALUE)
+
+    t3_row = t2_row + len(_CMP_SEV_ORDER) + 2
+    _write_row(ws, t3_row, ["Severidad (revisión actual)", "Cantidad"], STYLE_LABEL)
+    for i, sev in enumerate(_CMP_SEV_ORDER, 1):
+        _write_row(ws, t3_row + i, [SEVERITY_LABELS.get(sev, sev), data["findings_after"].get(sev, 0)], STYLE_VALUE)
+
+    # Gráfico 1 — Dispositivos: actual vs anterior
+    chart_devices = BarChart()
+    chart_devices.type = "col"
+    chart_devices.title = "Dispositivos: actual vs anterior"
+    chart_devices.add_data(Reference(ws, min_col=2, max_col=3, min_row=t1_row, max_row=t1_row + 1), titles_from_data=True)
+    chart_devices.set_categories(Reference(ws, min_col=1, min_row=t1_row + 1, max_row=t1_row + 1))
+    _style_bar_series(chart_devices, [_CMP_COLOR_ANTERIOR, _CMP_COLOR_ACTUAL])
+    chart_devices.height, chart_devices.width = 7.5, 11
+    ws.add_chart(chart_devices, f"E{t1_row}")
+
+    # Gráfico 2 — Riesgos por severidad: actual vs anterior
+    chart_risks = BarChart()
+    chart_risks.type = "col"
+    chart_risks.title = "Riesgos por severidad: actual vs anterior"
+    chart_risks.add_data(Reference(ws, min_col=2, max_col=3, min_row=t2_row, max_row=t2_row + len(_CMP_SEV_ORDER)), titles_from_data=True)
+    chart_risks.set_categories(Reference(ws, min_col=1, min_row=t2_row + 1, max_row=t2_row + len(_CMP_SEV_ORDER)))
+    _style_bar_series(chart_risks, [_CMP_COLOR_ANTERIOR, _CMP_COLOR_ACTUAL])
+    chart_risks.height, chart_risks.width = 7.5, 11
+    ws.add_chart(chart_risks, f"N{t1_row}")
+
+    # Gráfico 3 — Riesgos por severidad (anillo, revisión actual)
+    chart_donut = DoughnutChart()
+    chart_donut.title = "Riesgos por severidad (revisión actual)"
+    chart_donut.add_data(Reference(ws, min_col=2, min_row=t3_row, max_row=t3_row + len(_CMP_SEV_ORDER)), titles_from_data=True)
+    chart_donut.set_categories(Reference(ws, min_col=1, min_row=t3_row + 1, max_row=t3_row + len(_CMP_SEV_ORDER)))
+    _style_donut_series(chart_donut, [_CMP_SEV_COLORS[s] for s in _CMP_SEV_ORDER])
+    chart_donut.height, chart_donut.width = 7.5, 11
+    ws.add_chart(chart_donut, f"E{t1_row + 18}")
+
+
+def _sheet_cmp_dispositivos(wb, data: dict):
+    ws = wb.create_sheet("Dispositivos")
+    ws.sheet_view.showGridLines = False
+
+    def _device_row(d: dict) -> list:
+        return [d.get("ip", ""), d.get("hostname") or "", _device_type_label(d.get("device_type"))]
+
+    row = 1
+    row = _cmp_table_block(ws, row, "DISPOSITIVOS NUEVOS", data["new_devices"], ["IP", "Hostname", "Tipo"], _device_row)
+    row = _cmp_table_block(ws, row, "DISPOSITIVOS DESAPARECIDOS", data["removed_devices"], ["IP", "Hostname", "Tipo"], _device_row)
+    row = _cmp_table_block(
+        ws, row, "IPs NUEVAS", [{"ip": ip} for ip in data["new_ips"]],
+        ["IP"], lambda d: [d.get("ip", "")],
+    )
+    row = _cmp_table_block(
+        ws, row, "CAMBIOS DE HOSTNAME", data["hostname_changes"],
+        ["IP", "Hostname antes", "Hostname después"],
+        lambda d: [d.get("ip", ""), d.get("before") or "", d.get("after") or ""],
+    )
+    row = _cmp_table_block(
+        ws, row, "CAMBIOS DE TIPO", data["type_changes"],
+        ["IP", "Hostname", "Tipo antes", "Tipo después"],
+        lambda d: [d.get("ip", ""), d.get("hostname") or "", _device_type_label(d.get("before")), _device_type_label(d.get("after"))],
+    )
+
+    for i, w in enumerate([18, 30, 22, 22], 1):
+        _set_col_width(ws, i, w)
+
+
+def _sheet_cmp_puertos(wb, data: dict):
+    ws = wb.create_sheet("Puertos")
+    ws.sheet_view.showGridLines = False
+
+    def _port_row(p: dict) -> list:
+        return [p.get("ip", ""), p.get("hostname") or "", p.get("port", "")]
+
+    row = 1
+    row = _cmp_table_block(ws, row, "PUERTOS NUEVOS", data["new_ports"], ["IP", "Hostname", "Puerto"], _port_row)
+    row = _cmp_table_block(ws, row, "PUERTOS CERRADOS", data["closed_ports"], ["IP", "Hostname", "Puerto"], _port_row)
+
+    for i, w in enumerate([18, 30, 12], 1):
+        _set_col_width(ws, i, w)
+
+    # Gráfico de barras: puertos nuevos vs cerrados
+    chart_row = row + 1
+    _write_row(ws, chart_row, ["Puertos", "Cantidad"], STYLE_LABEL)
+    _write_row(ws, chart_row + 1, ["Nuevos", len(data["new_ports"])], STYLE_VALUE)
+    _write_row(ws, chart_row + 2, ["Cerrados", len(data["closed_ports"])], STYLE_VALUE)
+
+    chart = BarChart()
+    chart.type = "col"
+    chart.title = "Puertos: nuevos vs cerrados"
+    chart.add_data(Reference(ws, min_col=2, min_row=chart_row, max_row=chart_row + 2), titles_from_data=True)
+    chart.set_categories(Reference(ws, min_col=1, min_row=chart_row + 1, max_row=chart_row + 2))
+    if chart.series:
+        chart.series[0].graphicalProperties = GraphicalProperties(solidFill=_CMP_COLOR_ACTUAL)
+    chart.legend = None
+    chart.height, chart.width = 7.5, 11
+    ws.add_chart(chart, f"E{chart_row}")
+
+
+def _sheet_cmp_riesgos(wb, data: dict):
+    ws = wb.create_sheet("Riesgos")
+    ws.sheet_view.showGridLines = False
+
+    headers = ["Severidad", "Hallazgo", "Categoría"]
+
+    def _finding_row(f: dict) -> list:
+        return [
+            SEVERITY_LABELS.get(f.get("severity", ""), (f.get("severity") or "").upper()),
+            f.get("title", ""),
+            (f.get("category") or "").capitalize(),
+        ]
+
+    row = 1
+    row = _cmp_table_block(ws, row, "RIESGOS NUEVOS", data["new_findings"], headers, _finding_row)
+    row = _cmp_table_block(ws, row, "RIESGOS RESUELTOS", data["resolved_findings"], headers, _finding_row)
+    row = _cmp_table_block(ws, row, "RIESGOS PERSISTENTES", data["persistent_findings"], headers, _finding_row)
+
+    for i, w in enumerate([14, 60, 22], 1):
+        _set_col_width(ws, i, w)
+
+
+def _sheet_cmp_recomendaciones(wb, recommendations: list[Finding]):
+    ws = wb.create_sheet("Recomendaciones")
+    ws.sheet_view.showGridLines = False
+
+    ws.merge_cells("A1:E1")
+    ws.cell(row=1, column=1, value="RECOMENDACIONES — RIESGOS NUEVOS Y PERSISTENTES")
+    apply_style(ws.cell(row=1, column=1), STYLE_SUBHEADER)
+
+    headers = ["Prioridad", "Severidad", "Hallazgo", "Recomendación", "Categoría"]
+    _write_row(ws, 2, headers, STYLE_HEADER)
+    for i, w in enumerate([10, 14, 40, 70, 20], 1):
+        _set_col_width(ws, i, w)
+
+    priority_order = {"critical": 1, "high": 2, "medium": 3, "low": 4, "informational": 5}
+    sorted_recs = sorted(recommendations, key=lambda f: priority_order.get(f.severity, 9))
+
+    if not sorted_recs:
+        ws.cell(row=3, column=1, value="Sin recomendaciones pendientes derivadas de la comparativa")
+        apply_style(ws.cell(row=3, column=1), STYLE_VALUE)
+        return
+
+    for idx, f in enumerate(sorted_recs, 3):
+        style = STYLE_ROW_EVEN if idx % 2 == 0 else STYLE_ROW_ODD
+        _write_row(ws, idx, [
+            priority_order.get(f.severity, "-"),
+            SEVERITY_LABELS.get(f.severity, ""),
+            f.title,
+            f.recommendation or "",
+            f.category.capitalize(),
+        ], style)

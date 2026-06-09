@@ -204,6 +204,11 @@ export interface ComparisonResult {
   new_devices: Array<{ ip: string; hostname?: string; device_type: string }>
   removed_devices: Array<{ ip: string; hostname?: string; device_type: string }>
   changed_devices: Array<{ ip: string; hostname?: string; changes: Record<string, unknown> }>
+  new_ips: string[]
+  hostname_changes: Array<{ ip: string; hostname?: string; before?: string; after?: string }>
+  type_changes: Array<{ ip: string; hostname?: string; before?: string; after?: string }>
+  new_ports: Array<{ ip: string; hostname?: string; port: number }>
+  closed_ports: Array<{ ip: string; hostname?: string; port: number }>
   devices_before: number
   devices_after: number
   new_findings: Array<{ title: string; severity: string; category: string }>

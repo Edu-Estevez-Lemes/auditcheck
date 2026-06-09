@@ -43,6 +43,12 @@ class ComparisonResult:
     removed_devices: list[dict] = field(default_factory=list)
     changed_devices: list[dict] = field(default_factory=list)
 
+    new_ips: list[str] = field(default_factory=list)
+    hostname_changes: list[dict] = field(default_factory=list)
+    type_changes: list[dict] = field(default_factory=list)
+    new_ports: list[dict] = field(default_factory=list)
+    closed_ports: list[dict] = field(default_factory=list)
+
     devices_before: int = 0
     devices_after: int = 0
 
@@ -63,6 +69,11 @@ class ComparisonResult:
             "new_devices": self.new_devices,
             "removed_devices": self.removed_devices,
             "changed_devices": self.changed_devices,
+            "new_ips": self.new_ips,
+            "hostname_changes": self.hostname_changes,
+            "type_changes": self.type_changes,
+            "new_ports": self.new_ports,
+            "closed_ports": self.closed_ports,
             "devices_before": self.devices_before,
             "devices_after": self.devices_after,
             "new_findings": self.new_findings,
@@ -102,6 +113,7 @@ def compare_audits(db: Session, audit_a_id: int, audit_b_id: int) -> ComparisonR
         result.new_devices.append({
             "ip": ip, "hostname": d.hostname, "device_type": d.device_type
         })
+    result.new_ips = [d["ip"] for d in result.new_devices]
 
     for ip in ips_a - ips_b:
         d = devices_a[ip]
@@ -116,19 +128,31 @@ def compare_audits(db: Session, audit_a_id: int, audit_b_id: int) -> ComparisonR
 
         if da.hostname != db_.hostname:
             changes["hostname"] = {"before": da.hostname, "after": db_.hostname}
+            result.hostname_changes.append({
+                "ip": ip, "hostname": db_.hostname,
+                "before": da.hostname, "after": db_.hostname,
+            })
         if da.device_type != db_.device_type:
             changes["device_type"] = {"before": da.device_type, "after": db_.device_type}
+            result.type_changes.append({
+                "ip": ip, "hostname": db_.hostname,
+                "before": da.device_type, "after": db_.device_type,
+            })
 
         ports_a = {p.port_number for p in db.query(Port).filter(Port.device_id == da.id).all()}
         ports_b = {p.port_number for p in db.query(Port).filter(Port.device_id == db_.id).all()}
 
-        new_ports = list(ports_b - ports_a)
-        removed_ports = list(ports_a - ports_b)
+        new_ports = sorted(ports_b - ports_a)
+        removed_ports = sorted(ports_a - ports_b)
 
         if new_ports:
             changes["new_ports"] = new_ports
+            for port in new_ports:
+                result.new_ports.append({"ip": ip, "hostname": db_.hostname, "port": port})
         if removed_ports:
             changes["removed_ports"] = removed_ports
+            for port in removed_ports:
+                result.closed_ports.append({"ip": ip, "hostname": db_.hostname, "port": port})
 
         if changes:
             result.changed_devices.append({"ip": ip, "hostname": db_.hostname, "changes": changes})

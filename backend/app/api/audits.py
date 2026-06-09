@@ -16,7 +16,7 @@ from ..models.device import Device, Port, DeviceKnowledge
 from ..models.credential import Credential
 from ..models.finding import Finding
 from ..models.user import User
-from ..reports.excel import generate_excel_report
+from ..reports.excel import generate_excel_report, generate_comparison_excel_report
 from ..config import settings
 
 router = APIRouter(prefix="/audits", tags=["Auditorías"])
@@ -430,3 +430,38 @@ def compare(
 ):
     result = compare_audits(db, audit_a_id, audit_b_id)
     return result.to_dict()
+
+
+@router.get("/compare/{audit_a_id}/{audit_b_id}/excel")
+def compare_excel(
+    audit_a_id: int, audit_b_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    import datetime as dt
+    from ..models.client import Client
+
+    audit_a = db.query(Audit).filter(Audit.id == audit_a_id).first()
+    audit_b = db.query(Audit).filter(Audit.id == audit_b_id).first()
+    if not audit_a or not audit_b:
+        raise HTTPException(status_code=404, detail="Una o ambas auditorías no existen")
+
+    client = db.query(Client).filter(Client.id == audit_b.client_id).first()
+    client_name = (client.name or "cliente").replace(" ", "_") if client else "cliente"
+    date_str = dt.datetime.utcnow().strftime("%Y-%m-%d")
+    filename = f"AUDITCHECK_Comparativa_{date_str}_{client_name}.xlsx"
+    output_path = settings.AUDITS_DIR / str(audit_b_id) / filename
+
+    try:
+        generate_comparison_excel_report(db, audit_a_id, audit_b_id, output_path=output_path)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    if not output_path.exists():
+        raise HTTPException(status_code=500, detail="Error generando el informe comparativo")
+
+    return FileResponse(
+        str(output_path),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=filename,
+    )
