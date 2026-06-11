@@ -109,6 +109,19 @@ export const accessApi = {
     api.get('/access/login-profiles', { params: deviceType ? { device_type: deviceType } : {} }),
 }
 
+// Revisiones Manuales
+export const reviewsApi = {
+  checklist: () => api.get('/reviews/checklist'),
+  list: (auditId?: number, clientId?: number) =>
+    api.get('/reviews/', { params: { ...(auditId ? { audit_id: auditId } : {}), ...(clientId ? { client_id: clientId } : {}) } }),
+  create: (data: unknown) => api.post('/reviews/', data),
+  update: (id: number, data: unknown) => api.put(`/reviews/${id}`, data),
+  last: (clientId: number) => api.get('/reviews/last', { params: { client_id: clientId } }),
+  delete: (id: number) => api.delete(`/reviews/${id}`),
+  exportExcel: (id: number) => api.get(`/reviews/${id}/export/excel`, { responseType: 'blob' }),
+  exportPdf: (id: number) => api.get(`/reviews/${id}/export/pdf`, { responseType: 'blob' }),
+}
+
 // Auth
 export const authApi = {
   login: (username: string, password: string) => {

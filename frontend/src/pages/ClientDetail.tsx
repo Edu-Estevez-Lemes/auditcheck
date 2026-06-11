@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Trash2, Upload, Edit, ClipboardList, Key, Network } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Upload, Edit, ClipboardList, Key, Network, Download, ClipboardCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { clientsApi, credentialsApi, auditsApi } from '../lib/api'
-import type { Client, Credential, AuditSummary } from '../types'
+import { clientsApi, credentialsApi, auditsApi, reviewsApi } from '../lib/api'
+import type { Client, Credential, AuditSummary, ReviewSession } from '../types'
 import { Modal } from '../components/Modal'
 import { ClientForm } from '../components/ClientForm'
 import { CredentialForm } from '../components/CredentialForm'
@@ -15,7 +15,7 @@ export function ClientDetail() {
   const clientId = Number(id)
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const [tab, setTab] = useState<'info' | 'credentials' | 'audits' | 'ranges'>('info')
+  const [tab, setTab] = useState<'info' | 'credentials' | 'audits' | 'ranges' | 'reviews'>('info')
   const [editOpen, setEditOpen] = useState(false)
   const [credOpen, setCredOpen] = useState(false)
 
@@ -75,6 +75,7 @@ export function ClientDetail() {
     { key: 'ranges', label: 'Rangos IP', icon: Network },
     { key: 'credentials', label: 'Credenciales', icon: Key },
     { key: 'audits', label: 'Auditorías', icon: ClipboardList },
+    { key: 'reviews', label: 'Revisiones', icon: ClipboardCheck },
   ] as const
 
   return (
@@ -242,6 +243,11 @@ export function ClientDetail() {
         </div>
       )}
 
+      {/* Tab: Revisiones */}
+      {tab === 'reviews' && (
+        <ReviewsTab clientId={clientId} />
+      )}
+
       {/* Modales */}
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title={`Editar: ${client.name}`} size="lg">
         <ClientForm
@@ -257,6 +263,125 @@ export function ClientDetail() {
           onCancel={() => setCredOpen(false)}
         />
       </Modal>
+    </div>
+  )
+}
+
+const REVIEW_CAT_LABELS: Record<string, string> = {
+  hardware: 'Hardware', vm: 'VM/Virt.', redes: 'Redes',
+  almacenamiento: 'Almacen.', backup: 'Backup', antivirus: 'Antivirus',
+}
+
+function ReviewsTab({ clientId }: { clientId: number }) {
+  const qc = useQueryClient()
+
+  const reviewsQ = useQuery<ReviewSession[]>({
+    queryKey: ['reviews', clientId],
+    queryFn: () => reviewsApi.list(undefined, clientId).then(r => r.data),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => reviewsApi.delete(id),
+    onSuccess: () => {
+      toast.success('Revisión eliminada')
+      qc.invalidateQueries({ queryKey: ['reviews', clientId] })
+    },
+    onError: () => toast.error('Error al eliminar'),
+  })
+
+  const handleExcel = async (review: ReviewSession) => {
+    try {
+      const res = await reviewsApi.exportExcel(review.id)
+      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `REVISION_${review.review_date}_${review.id}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 100)
+    } catch (err: unknown) {
+      const response = (err as { response?: { status?: number; data?: unknown } })?.response
+      let detail: string | undefined
+      if (response?.data instanceof Blob) {
+        try { detail = JSON.parse(await (response.data as Blob).text())?.detail } catch { /* ignore */ }
+      } else {
+        detail = (response?.data as { detail?: string })?.detail
+      }
+      toast.error(detail ?? 'Error al exportar Excel')
+    }
+  }
+
+  const reviews = reviewsQ.data ?? []
+
+  return (
+    <div className="space-y-3">
+      {reviewsQ.isLoading ? (
+        <div className="flex justify-center py-10">
+          <span className="animate-spin h-6 w-6 border-2 border-primary/30 border-t-primary rounded-full" />
+        </div>
+      ) : reviews.length === 0 ? (
+        <div className="text-center py-12 text-text-muted border border-dashed border-border rounded-xl">
+          <ClipboardCheck size={32} className="mx-auto mb-3 opacity-40" />
+          <p>Sin revisiones manuales para este cliente.</p>
+          <p className="text-xs mt-1">Usa el botón "Revisión Manual" desde el detalle de una auditoría.</p>
+        </div>
+      ) : (
+        <div className="table-container">
+          <table className="table">
+            <thead>
+              <tr>
+                {['Fecha', 'Técnico', 'Categorías', 'Dispositivos', 'Estado', 'Exportado', ''].map(h => (
+                  <th key={h}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {reviews.map(r => (
+                <tr key={r.id}>
+                  <td className="font-mono text-sm">{r.review_date}</td>
+                  <td>{r.technician_name}</td>
+                  <td>
+                    <div className="flex flex-wrap gap-1">
+                      {r.categories.map(cat => (
+                        <span key={cat} className="px-1.5 py-0.5 rounded text-xs bg-primary/10 text-primary border border-primary/20">
+                          {REVIEW_CAT_LABELS[cat] ?? cat}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="text-center">{r.selected_device_ids.length}</td>
+                  <td>
+                    <span className={`badge ${r.is_completed ? 'badge-success' : 'badge-info'}`}>
+                      {r.is_completed ? 'Completada' : 'Borrador'}
+                    </span>
+                  </td>
+                  <td className="text-text-muted text-xs">{r.exported_at ? formatDate(r.exported_at) : '—'}</td>
+                  <td>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => handleExcel(r)}
+                        title="Descargar Excel"
+                        className="btn-ghost p-1.5 hover:text-success"
+                      >
+                        <Download size={14} />
+                      </button>
+                      <button
+                        onClick={() => { if (confirm('¿Eliminar esta revisión?')) deleteMut.mutate(r.id) }}
+                        title="Eliminar"
+                        className="btn-ghost p-1.5 hover:text-danger"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

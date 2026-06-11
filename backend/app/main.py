@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from .config import settings
 from .database import engine
 from .models import Base
-from .api import auth, clients, credentials, audits, scanners, dashboard, branding, rdp as rdp_router, access as access_router
+from .api import auth, clients, credentials, audits, scanners, dashboard, branding, rdp as rdp_router, access as access_router, reviews as reviews_router
 from .services.auth import hash_password
 from .database import SessionLocal
 
@@ -92,6 +92,18 @@ def _migrate_db():
             conn.commit()
     except Exception as e:
         logger.warning(f"Migración DB (device_knowledge): {e}")
+
+    # Migración review_sessions — columna exported_at añadida en v1.2.20
+    try:
+        if "review_sessions" in inspector.get_table_names():
+            existing_rs = {c["name"] for c in inspector.get_columns("review_sessions")}
+            with engine.connect() as conn:
+                if "exported_at" not in existing_rs:
+                    conn.execute(text("ALTER TABLE review_sessions ADD COLUMN exported_at DATETIME"))
+                    logger.info("Migración: columna review_sessions.exported_at añadida")
+                    conn.commit()
+    except Exception as e:
+        logger.warning(f"Migración DB (review_sessions): {e}")
 
 
 def _seed_login_profiles():
@@ -232,6 +244,7 @@ app.include_router(dashboard.router, prefix=API_PREFIX)
 app.include_router(branding.router, prefix=API_PREFIX)
 app.include_router(rdp_router.router, prefix=API_PREFIX)
 app.include_router(access_router.router, prefix=API_PREFIX)
+app.include_router(reviews_router.router, prefix=API_PREFIX)
 
 # Branding — logo corporativo
 @app.get("/api/v1/branding/logo")

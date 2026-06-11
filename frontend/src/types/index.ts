@@ -175,6 +175,51 @@ export interface Finding {
   device_hostname?: string
 }
 
+// ── Revisiones Manuales ────────────────────────────────────────────────────
+
+export type ReviewItemStatus = 'ok' | 'warning' | 'critical' | ''
+
+export interface ReviewCategoryResult {
+  items: Record<string, ReviewItemStatus>
+  observations: string
+}
+
+export interface ReviewResultsData {
+  [deviceId: string]: {
+    [categoryKey: string]: ReviewCategoryResult
+  }
+}
+
+export interface ReviewSession {
+  id: number
+  audit_id: number
+  client_id: number
+  technician_name: string
+  review_date: string
+  categories: string[]
+  selected_device_ids: number[]
+  review_data: ReviewResultsData | null
+  is_completed: boolean
+  exported_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReviewChecklistItem {
+  key: string
+  label: string
+}
+
+export interface ReviewCategory {
+  key: string
+  label: string
+}
+
+export interface ReviewChecklist {
+  categories: ReviewCategory[]
+  items: Record<string, Record<string, ReviewChecklistItem[]>>
+}
+
 export interface DashboardStats {
   clients: { total: number; active: number }
   audits: { total: number; completed: number }

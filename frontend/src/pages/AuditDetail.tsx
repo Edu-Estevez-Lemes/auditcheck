@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Download, Server, AlertTriangle, Network, Shield,
   Copy, Monitor, Globe, Terminal, Pencil, Sparkles, Key, Zap,
-  ChevronUp, ChevronDown, ChevronsUpDown,
+  ChevronUp, ChevronDown, ChevronsUpDown, ClipboardList,
 } from 'lucide-react'
 import { useThemeStore } from '../store/themeStore'
 import toast from 'react-hot-toast'
@@ -12,6 +12,7 @@ import { auditsApi, rdpApi, accessApi } from '../lib/api'
 import { DeviceEditModal } from '../components/DeviceEditModal'
 import { WebCredentialPanel } from '../components/WebCredentialPanel'
 import { CredentialQuickPanel } from '../components/CredentialQuickPanel'
+import { ReviewWizardModal } from '../components/ReviewWizardModal'
 import type { WebCredData } from '../components/WebCredentialPanel'
 import type { Audit, Device, Finding } from '../types'
 import { formatDate, SEVERITY_CONFIG, DEVICE_TYPE_LABELS } from '../lib/utils'
@@ -219,6 +220,7 @@ export function AuditDetail() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [editingDevice, setEditingDevice] = useState<Device | null>(null)
   const [credPanel, setCredPanel] = useState<{ open: boolean; device: Device | null }>({ open: false, device: null })
+  const [reviewWizardOpen, setReviewWizardOpen] = useState(false)
   const [webPanel, setWebPanel] = useState<{
     open: boolean
     loading: boolean
@@ -478,6 +480,12 @@ export function AuditDetail() {
             {audit.completed_at && ` · ${formatDate(audit.completed_at)}`}
           </p>
         </div>
+        {audit.total_devices > 0 && (
+          <button className="btn-ghost flex items-center gap-1.5" onClick={() => setReviewWizardOpen(true)}>
+            <ClipboardList size={15} />
+            Revisión Manual
+          </button>
+        )}
         {audit.status === 'completed' && (
           <button className="btn-success" onClick={handleDownload} disabled={downloading}>
             <Download size={15} />
@@ -967,6 +975,14 @@ export function AuditDetail() {
           onDeviceUpdate={() => queryClient.invalidateQueries({ queryKey: ['audit-devices', auditId] })}
         />
       )}
+
+      {/* ── REVISIÓN MANUAL ─────────────────────────────────────────────────── */}
+      <ReviewWizardModal
+        open={reviewWizardOpen}
+        onClose={() => setReviewWizardOpen(false)}
+        auditId={auditId}
+        clientId={audit.client_id}
+      />
     </div>
   )
 }
