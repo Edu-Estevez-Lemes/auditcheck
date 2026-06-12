@@ -120,6 +120,12 @@ export const reviewsApi = {
   delete: (id: number) => api.delete(`/reviews/${id}`),
   exportExcel: (id: number) => api.get(`/reviews/${id}/export/excel`, { responseType: 'blob' }),
   exportPdf: (id: number) => api.get(`/reviews/${id}/export/pdf`, { responseType: 'blob' }),
+  // Configuración por cliente
+  getConfig: (clientId: number) => api.get(`/reviews/configs/${clientId}`),
+  upsertConfig: (data: unknown) => api.post('/reviews/configs', data),
+  // Estado de revisión para múltiples clientes (badges en listado)
+  getStatus: (clientIds: number[]) =>
+    api.get('/reviews/status', { params: { client_ids: clientIds.join(',') } }),
 }
 
 // Auth

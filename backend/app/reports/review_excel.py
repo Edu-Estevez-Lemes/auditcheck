@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
 
 _INVALID_SHEET_CHARS = re.compile(r'[\\/?*\[\]:]')
 
@@ -190,8 +191,8 @@ def generate_review_excel(review_export_data: dict, output_path: Path) -> None:
     categories: list[str] = review_export_data.get("categories", [])
     devices: list[dict] = review_export_data.get("devices", [])
     results: dict = review_export_data.get("results", {})
-    # device_categories: {str(device_id): [cat_keys]}  — None means all categories
     device_categories: dict | None = review_export_data.get("device_categories")
+    logo_path: str | None = review_export_data.get("logo_path")
 
     def _dev_cats(dev_id: str) -> list[str]:
         if device_categories and dev_id in device_categories:
@@ -203,7 +204,8 @@ def generate_review_excel(review_export_data: dict, output_path: Path) -> None:
     ws_sum.column_dimensions["A"].width = 28
     ws_sum.column_dimensions["B"].width = 28
     ws_sum.column_dimensions["C"].width = 15
-    ws_sum.column_dimensions["D"].width = 45
+    ws_sum.column_dimensions["D"].width = 35
+    ws_sum.column_dimensions["E"].width = 18
 
     ws_sum.merge_cells("A1:D1")
     c = ws_sum.cell(row=1, column=1, value="REVISIÓN MANUAL — RESUMEN")
@@ -220,6 +222,22 @@ def generate_review_excel(review_export_data: dict, output_path: Path) -> None:
         _cell(ws_sum, 1, i, label, STYLE_LABEL)
         ws_sum.merge_cells(f"B{i}:D{i}")
         _cell(ws_sum, 2, i, value, STYLE_VALUE)
+
+    # Logo del cliente — columna E, filas 1-4
+    if logo_path:
+        try:
+            img = XLImage(logo_path)
+            # Scale image to fit neatly in ~4 rows × 1 column
+            max_w, max_h = 140, 70
+            if img.width and img.height:
+                ratio = min(max_w / img.width, max_h / img.height)
+                img.width = int(img.width * ratio)
+                img.height = int(img.height * ratio)
+            else:
+                img.width, img.height = max_w, max_h
+            ws_sum.add_image(img, "E1")
+        except Exception:
+            pass  # Logo failure is non-critical
 
     row = 7
     ws_sum.merge_cells(f"A{row}:D{row}")

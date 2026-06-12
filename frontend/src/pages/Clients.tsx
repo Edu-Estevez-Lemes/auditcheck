@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Building2, Edit, Trash2, Power, AlertCircle } from 'lucide-react'
+import { Plus, Search, Building2, Edit, Trash2, Power, AlertCircle, ClipboardList, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { clientsApi } from '../lib/api'
-import type { ClientSummary } from '../types'
+import { clientsApi, reviewsApi } from '../lib/api'
+import type { ClientSummary, ReviewClientStatus } from '../types'
 import { Modal } from '../components/Modal'
 import { ClientForm } from '../components/ClientForm'
 import { ConfirmDialog } from '../components/ConfirmDialog'
@@ -19,6 +19,17 @@ export function ClientsPage() {
     queryKey: ['clients'],
     queryFn: () => clientsApi.list().then((r) => r.data),
   })
+
+  const { data: reviewStatuses = [] } = useQuery<ReviewClientStatus[]>({
+    queryKey: ['review-status', clients.map(c => c.id)],
+    queryFn: () =>
+      clients.length > 0
+        ? reviewsApi.getStatus(clients.map(c => c.id)).then(r => r.data)
+        : Promise.resolve([]),
+    enabled: clients.length > 0,
+  })
+
+  const reviewStatusMap = Object.fromEntries(reviewStatuses.map(s => [s.client_id, s]))
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => clientsApi.delete(id),
@@ -84,7 +95,10 @@ export function ClientsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map((c) => (
+          {filtered.map((c) => {
+            const rs = reviewStatusMap[c.id]
+            const reviewPending = rs && rs.last_review_completed && (rs.days_since_review ?? 0) > 7
+            return (
             <div
               key={c.id}
               className={`card hover:border-primary/30 transition-colors ${!c.is_active ? 'opacity-60' : ''}`}
@@ -106,15 +120,29 @@ export function ClientsPage() {
                     </div>
                   )}
                   <div>
-                    <Link
-                      to={`/clients/${c.id}`}
-                      className="font-semibold text-text-primary hover:text-primary transition-colors block"
-                    >
-                      {c.name}
-                    </Link>
-                    <span className={`text-xs ${c.is_active ? 'text-success' : 'text-text-muted'}`}>
-                      {c.is_active ? 'Activo' : 'Inactivo'}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Link
+                        to={`/clients/${c.id}`}
+                        className="font-semibold text-text-primary hover:text-primary transition-colors"
+                      >
+                        {c.name}
+                      </Link>
+                      {rs?.has_config && (
+                        <span title="Configuración de revisión guardada" className="text-primary">
+                          <ClipboardList size={13} />
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className={`text-xs ${c.is_active ? 'text-success' : 'text-text-muted'}`}>
+                        {c.is_active ? 'Activo' : 'Inactivo'}
+                      </span>
+                      {reviewPending && (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                          <Clock size={10} /> Revisión pendiente
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
@@ -155,7 +183,8 @@ export function ClientsPage() {
                 </div>
               </div>
             </div>
-          ))}
+          )
+          })}
         </div>
       )}
 

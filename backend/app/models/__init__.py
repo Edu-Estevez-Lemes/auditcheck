@@ -10,10 +10,11 @@ from .veeam import BackupJob, BackupRepository
 from .hardware import FortiGateStatus, SNMPDevice, HardwareStatus
 from .login_profile import LoginProfile
 from .review import ReviewSession
+from .review_config import ReviewConfig
 
 __all__ = [
     "Base", "User", "Client", "IPRange", "Credential", "Audit",
     "Device", "Port", "DeviceKnowledge", "Finding", "VMwareHost", "VMwareVM", "Datastore",
     "BackupJob", "BackupRepository", "FortiGateStatus", "SNMPDevice",
-    "HardwareStatus", "LoginProfile", "ReviewSession",
+    "HardwareStatus", "LoginProfile", "ReviewSession", "ReviewConfig",
 ]

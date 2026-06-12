@@ -177,6 +177,33 @@ export interface Finding {
 
 // ── Revisiones Manuales ────────────────────────────────────────────────────
 
+export interface ReviewHostConfig {
+  ip: string
+  nombre: string
+  categorias: string[]
+}
+
+export interface ReviewConfig {
+  id: number
+  client_id: number
+  client_nombre: string
+  configurado_por: string
+  fecha_configuracion: string
+  hosts: ReviewHostConfig[]
+  created_at: string
+  updated_at: string
+}
+
+export interface ReviewClientStatus {
+  client_id: number
+  has_config: boolean
+  configured_hosts: number
+  last_review_date: string | null
+  last_technician: string | null
+  last_review_completed: boolean
+  days_since_review: number | null
+}
+
 export type ReviewItemStatus = 'ok' | 'warning' | 'critical' | ''
 
 export interface ReviewCategoryResult {

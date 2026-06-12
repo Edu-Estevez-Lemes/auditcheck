@@ -4,6 +4,47 @@ from typing import Any
 from pydantic import BaseModel
 
 
+# ─── ReviewConfig schemas ──────────────────────────────────────────────────────
+
+class ReviewHostConfig(BaseModel):
+    ip: str
+    nombre: str
+    categorias: list[str]
+
+
+class ReviewConfigCreate(BaseModel):
+    client_id: int
+    client_nombre: str
+    configurado_por: str
+    fecha_configuracion: str
+    hosts: list[ReviewHostConfig]
+
+
+class ReviewConfigOut(BaseModel):
+    id: int
+    client_id: int
+    client_nombre: str
+    configurado_por: str
+    fecha_configuracion: str
+    hosts: list[ReviewHostConfig]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ReviewClientStatus(BaseModel):
+    client_id: int
+    has_config: bool
+    configured_hosts: int = 0
+    last_review_date: str | None = None
+    last_technician: str | None = None
+    last_review_completed: bool = False
+    days_since_review: int | None = None
+
+
+# ─── ReviewSession schemas ─────────────────────────────────────────────────────
+
 class ReviewCreate(BaseModel):
     audit_id: int
     technician_name: str

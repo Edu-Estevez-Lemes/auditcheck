@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   X, ChevronLeft, ChevronRight, Save, Download, FileText,
-  CheckCircle2, AlertTriangle, XCircle, ClipboardList, Loader2,
+  CheckCircle2, AlertTriangle, XCircle, ClipboardList, Loader2, Info,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { auditsApi, reviewsApi, clientsApi } from '../lib/api'
 import { useAuthStore } from '../store/authStore'
-import type { Device, ReviewChecklist, ReviewItemStatus, ReviewResultsData } from '../types'
+import type { Device, ReviewChecklist, ReviewItemStatus, ReviewResultsData, ReviewConfig } from '../types'
+import type { ReviewConfigMode } from './ReviewPreDialog'
 import { DEVICE_TYPE_LABELS } from '../lib/utils'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -17,6 +18,8 @@ interface ReviewWizardModalProps {
   auditId: number
   clientId: number
   clientName?: string
+  reviewConfig?: ReviewConfig | null
+  configMode?: ReviewConfigMode
 }
 
 // deviceCategories: Record<deviceId string, string[]>
@@ -72,7 +75,10 @@ function autoDetectCats(deviceType: string, categories: string[], checklist: Rev
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function ReviewWizardModal({ open, onClose, auditId, clientId, clientName }: ReviewWizardModalProps) {
+export function ReviewWizardModal({
+  open, onClose, auditId, clientId, clientName,
+  reviewConfig = null, configMode = 'reset',
+}: ReviewWizardModalProps) {
   const user = useAuthStore((s) => s.user)
 
   const [checklist, setChecklist] = useState<ReviewChecklist | null>(null)
@@ -83,6 +89,8 @@ export function ReviewWizardModal({ open, onClose, auditId, clientId, clientName
   const [exporting, setExporting] = useState<'' | 'excel' | 'pdf'>('')
   const [reviewId, setReviewId] = useState<number | null>(null)
   const [resolvedClientName, setResolvedClientName] = useState(clientName ?? '')
+  const [infraWarnings, setInfraWarnings] = useState<{ removed: string[]; added: string[] }>({ removed: [], added: [] })
+  const [configSaved, setConfigSaved] = useState(false)
 
   const [state, setState] = useState<WizardState>({
     technician: user?.full_name ?? user?.username ?? '',
@@ -95,8 +103,11 @@ export function ReviewWizardModal({ open, onClose, auditId, clientId, clientName
 
   useEffect(() => {
     if (!open) return
-    setStep(0)
+    const startStep = (reviewConfig && configMode === 'use') ? 1 : 0
+    setStep(startStep)
     setReviewId(null)
+    setConfigSaved(false)
+    setInfraWarnings({ removed: [], added: [] })
     setState({
       technician: user?.full_name ?? user?.username ?? '',
       reviewDate: TODAY,
@@ -111,8 +122,7 @@ export function ReviewWizardModal({ open, onClose, auditId, clientId, clientName
       reviewsApi.checklist(),
       auditsApi.getDevices(auditId),
       clientName ? Promise.resolve(null) : clientsApi.get(clientId).then(r => r.data).catch(() => null),
-      reviewsApi.last(clientId).then(r => r.data).catch(() => null),
-    ]).then(([chkRes, devRes, clientRes, lastReview]) => {
+    ]).then(([chkRes, devRes, clientRes]) => {
       const chk = chkRes.data as ReviewChecklist
       setChecklist(chk)
       const credDevices = (devRes.data as Device[]).filter(d => !!d.credential_name || !!d.credential_id)
@@ -120,33 +130,43 @@ export function ReviewWizardModal({ open, onClose, auditId, clientId, clientName
       if (!clientName && (clientRes as { name?: string })?.name) {
         setResolvedClientName((clientRes as { name: string }).name)
       }
-      // Pre-populate from last review
-      if (lastReview) {
-        const last = lastReview as import('../types').ReviewSession
-        const rawDevCats = (last.review_data as Record<string, unknown> | null)?._device_categories as Record<string, string[]> | undefined
-        const validDeviceIds = new Set(
-          (last.selected_device_ids ?? []).filter(id => credDevices.some(d => d.id === id))
-        )
-        const preDevCats: Record<string, string[]> = {}
-        validDeviceIds.forEach(id => {
-          const devId = String(id)
-          if (rawDevCats?.[devId]?.length) {
-            preDevCats[devId] = rawDevCats[devId].filter(c => (last.categories ?? []).includes(c))
-          } else {
-            const device = credDevices.find(d => d.id === id)
-            if (device) preDevCats[devId] = autoDetectCats(device.device_type, last.categories ?? [], chk)
+
+      if (reviewConfig && configMode !== 'reset') {
+        // Pre-populate from saved ReviewConfig (match by IP)
+        const allCats = Array.from(new Set(reviewConfig.hosts.flatMap(h => h.categorias)))
+        const selectedIds = new Set<number>()
+        const devCats: Record<string, string[]> = {}
+        const removed: string[] = []
+        const addedDevices: string[] = []
+
+        reviewConfig.hosts.forEach(configHost => {
+          const device = credDevices.find(d => d.ip_address === configHost.ip)
+          if (!device) {
+            removed.push(`${configHost.nombre} (${configHost.ip})`)
+            return
+          }
+          selectedIds.add(device.id)
+          devCats[String(device.id)] = configHost.categorias
+        })
+
+        // Detect new credentialed devices not in config
+        credDevices.forEach(d => {
+          if (!selectedIds.has(d.id) && !reviewConfig.hosts.some(h => h.ip === d.ip_address)) {
+            addedDevices.push(`${d.display_name || d.hostname || d.ip_address} (${d.ip_address})`)
           }
         })
+
+        setInfraWarnings({ removed, added: addedDevices })
         setState(prev => ({
           ...prev,
-          categories: last.categories ?? [],
-          selectedDeviceIds: validDeviceIds,
-          deviceCategories: preDevCats,
+          categories: allCats,
+          selectedDeviceIds: selectedIds,
+          deviceCategories: devCats,
         }))
       }
     }).catch(() => toast.error('Error cargando datos de revisión'))
       .finally(() => setLoading(false))
-  }, [open, auditId, clientId, clientName, user])
+  }, [open, auditId, clientId, clientName, user, reviewConfig, configMode])
 
   const totalSteps = (state.categories.length || 1) + 2
   const currentLabel = step === 0
@@ -250,6 +270,38 @@ export function ReviewWizardModal({ open, onClose, auditId, clientId, clientName
     })
   }
 
+  // ─── Save ReviewConfig ─────────────────────────────────────────────────────
+
+  const saveConfig = async (): Promise<boolean> => {
+    if (state.selectedDeviceIds.size === 0 || state.categories.length === 0) return false
+    try {
+      const hosts = Array.from(state.selectedDeviceIds).map(id => {
+        const device = devices.find(d => d.id === id)
+        return {
+          ip: device?.ip_address ?? '',
+          nombre: device?.display_name || device?.hostname || device?.ip_address || '',
+          categorias: state.deviceCategories[String(id)] ?? [],
+        }
+      }).filter(h => h.ip)
+
+      await reviewsApi.upsertConfig({
+        client_id: clientId,
+        client_nombre: resolvedClientName,
+        configurado_por: state.technician.trim() || (user?.full_name ?? user?.username ?? ''),
+        fecha_configuracion: state.reviewDate,
+        hosts,
+      })
+      setConfigSaved(true)
+      toast.success(
+        `Configuración guardada para ${resolvedClientName || 'el cliente'}`,
+        { icon: '📋', duration: 3000 }
+      )
+      return true
+    } catch {
+      return false
+    }
+  }
+
   // ─── Save draft ────────────────────────────────────────────────────────────
 
   const saveDraft = async (): Promise<number | null> => {
@@ -259,11 +311,8 @@ export function ReviewWizardModal({ open, onClose, auditId, clientId, clientName
 
     setSaving(true)
     try {
-      // Merge deviceCategories into review_data as a special key
       const reviewData = {
-        _device_categories: Object.fromEntries(
-          Object.entries(state.deviceCategories)
-        ),
+        _device_categories: Object.fromEntries(Object.entries(state.deviceCategories)),
         ...state.results,
       }
       const payload = {
@@ -316,7 +365,12 @@ export function ReviewWizardModal({ open, onClose, auditId, clientId, clientName
       })
       if (missing > 0) toast(`${missing} ítem(s) sin rellenar — puedes continuar`, { icon: '⚠️', duration: 3000 })
     }
-    setStep(s => s + 1)
+    const nextStep = step + 1
+    setStep(nextStep)
+    // Auto-save config when entering summary (non-reset modes save silently)
+    if (nextStep === totalSteps - 1 && configMode !== 'reset' && !configSaved) {
+      void saveConfig()
+    }
   }
 
   // ─── Export ────────────────────────────────────────────────────────────────
@@ -341,7 +395,6 @@ export function ReviewWizardModal({ open, onClose, auditId, clientId, clientName
       }
       setSaving(false)
     }
-
     setExporting(type)
     try {
       const res = type === 'excel'
@@ -424,6 +477,29 @@ export function ReviewWizardModal({ open, onClose, auditId, clientId, clientName
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-5 min-h-0">
+          {/* Infrastructure change warnings */}
+          {!loading && (infraWarnings.removed.length > 0 || infraWarnings.added.length > 0) && (
+            <div className="mb-4 space-y-2">
+              {infraWarnings.removed.length > 0 && (
+                <div className="flex gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold">Hosts excluidos automáticamente</span> (sin credenciales activas):
+                    {' '}{infraWarnings.removed.join(', ')}
+                  </div>
+                </div>
+              )}
+              {infraWarnings.added.length > 0 && (
+                <div className="flex gap-2 px-3 py-2.5 rounded-lg bg-primary/10 border border-primary/30 text-primary text-xs">
+                  <Info size={14} className="shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold">Nuevos hosts con credenciales</span> no incluidos en la configuración:
+                    {' '}{infraWarnings.added.join(', ')}. Puedes añadirlos en el paso de configuración.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {loading ? (
             <div className="flex items-center justify-center h-48">
               <Loader2 size={28} className="animate-spin text-primary" />
@@ -458,6 +534,9 @@ export function ReviewWizardModal({ open, onClose, auditId, clientId, clientName
               checklist={checklist}
               exporting={exporting}
               onExport={handleExport}
+              configMode={configMode}
+              configSaved={configSaved}
+              onSaveConfig={saveConfig}
             />
           )}
         </div>
@@ -810,11 +889,21 @@ interface StepSummaryProps {
   checklist: ReviewChecklist | null
   exporting: '' | 'excel' | 'pdf'
   onExport: (type: 'excel' | 'pdf') => void
+  configMode: ReviewConfigMode
+  configSaved: boolean
+  onSaveConfig: () => Promise<boolean>
 }
 
-function StepSummary({ state, devices, checklist, exporting, onExport }: StepSummaryProps) {
+function StepSummary({ state, devices, checklist, exporting, onExport, configMode, configSaved, onSaveConfig }: StepSummaryProps) {
+  const [savingConfig, setSavingConfig] = useState(false)
   const selectedDevices = devices.filter(d => state.selectedDeviceIds.has(d.id))
   const catLabels = Object.fromEntries((checklist?.categories ?? []).map(c => [c.key, c.label]))
+
+  const handleSaveConfig = async () => {
+    setSavingConfig(true)
+    await onSaveConfig()
+    setSavingConfig(false)
+  }
 
   return (
     <div className="space-y-5">
@@ -876,6 +965,29 @@ function StepSummary({ state, devices, checklist, exporting, onExport }: StepSum
           </table>
         </div>
       </div>
+
+      {/* Guardar configuración — solo en modo reset */}
+      {configMode === 'reset' && !configSaved && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary/10 border border-primary/30">
+          <ClipboardList size={16} className="text-primary shrink-0" />
+          <p className="text-sm text-text-primary flex-1">
+            ¿Guardar esta selección como configuración de revisión para el cliente?
+          </p>
+          <button
+            onClick={handleSaveConfig}
+            disabled={savingConfig}
+            className="btn-primary text-xs px-3 py-1.5 shrink-0"
+          >
+            {savingConfig ? <Loader2 size={13} className="animate-spin" /> : null}
+            Guardar
+          </button>
+        </div>
+      )}
+      {configMode === 'reset' && configSaved && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-success/10 border border-success/30 text-success text-sm">
+          <CheckCircle2 size={15} /> Configuración guardada para futuras revisiones
+        </div>
+      )}
 
       <div className="flex gap-3 pt-2">
         <button

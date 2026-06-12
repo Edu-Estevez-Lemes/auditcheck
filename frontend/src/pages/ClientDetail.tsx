@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Trash2, Upload, Edit, ClipboardList, Key, Network, Download, ClipboardCheck } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Upload, Edit, ClipboardList, Key, Network, Download, ClipboardCheck, PlayCircle, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { clientsApi, credentialsApi, auditsApi, reviewsApi } from '../lib/api'
-import type { Client, Credential, AuditSummary, ReviewSession } from '../types'
+import type { Client, Credential, AuditSummary, ReviewSession, ReviewConfig } from '../types'
+import type { ReviewConfigMode } from '../components/ReviewPreDialog'
 import { Modal } from '../components/Modal'
 import { ClientForm } from '../components/ClientForm'
 import { CredentialForm } from '../components/CredentialForm'
+import { ReviewPreDialog } from '../components/ReviewPreDialog'
+import { ReviewWizardModal } from '../components/ReviewWizardModal'
 import { formatDate, CREDENTIAL_TYPES } from '../lib/utils'
 
 export function ClientDetail() {
@@ -18,6 +21,14 @@ export function ClientDetail() {
   const [tab, setTab] = useState<'info' | 'credentials' | 'audits' | 'ranges' | 'reviews'>('info')
   const [editOpen, setEditOpen] = useState(false)
   const [credOpen, setCredOpen] = useState(false)
+  const [preDialogOpen, setPreDialogOpen] = useState(false)
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const [wizardAuditId, setWizardAuditId] = useState<number | null>(null)
+  const [reviewConfig, setReviewConfig] = useState<ReviewConfig | null>(null)
+  const [configMode, setConfigMode] = useState<ReviewConfigMode>('reset')
+  const [lastReviewDate, setLastReviewDate] = useState<string | null>(null)
+  const [lastTechnician, setLastTechnician] = useState<string | null>(null)
+  const [loadingReview, setLoadingReview] = useState(false)
 
   const clientQ = useQuery<Client>({
     queryKey: ['client', clientId],
@@ -31,6 +42,41 @@ export function ClientDetail() {
     queryKey: ['audits', clientId],
     queryFn: () => auditsApi.list(clientId).then((r) => r.data),
   })
+
+  const handleNewReview = async () => {
+    if (audits.length === 0) {
+      toast.error('No hay auditorías para este cliente. Realiza una auditoría primero.')
+      return
+    }
+    const latestAudit = audits[0]
+    setWizardAuditId(latestAudit.id)
+    setLoadingReview(true)
+
+    const [configResult, lastResult] = await Promise.allSettled([
+      reviewsApi.getConfig(clientId),
+      reviewsApi.last(clientId),
+    ])
+
+    const lastData = lastResult.status === 'fulfilled' ? (lastResult.value.data as { review_date?: string; technician_name?: string }) : null
+    setLastReviewDate(lastData?.review_date ?? null)
+    setLastTechnician(lastData?.technician_name ?? null)
+
+    setLoadingReview(false)
+    if (configResult.status === 'fulfilled') {
+      setReviewConfig(configResult.value.data as ReviewConfig)
+      setPreDialogOpen(true)
+    } else {
+      setReviewConfig(null)
+      setConfigMode('reset')
+      setWizardOpen(true)
+    }
+  }
+
+  const handlePreDialogSelect = (mode: ReviewConfigMode) => {
+    setPreDialogOpen(false)
+    setConfigMode(mode)
+    setWizardOpen(true)
+  }
 
   const deleteCredMut = useMutation({
     mutationFn: (credId: number) => credentialsApi.delete(credId),
@@ -245,7 +291,7 @@ export function ClientDetail() {
 
       {/* Tab: Revisiones */}
       {tab === 'reviews' && (
-        <ReviewsTab clientId={clientId} />
+        <ReviewsTab clientId={clientId} onNewReview={handleNewReview} loadingReview={loadingReview} />
       )}
 
       {/* Modales */}
@@ -263,16 +309,42 @@ export function ClientDetail() {
           onCancel={() => setCredOpen(false)}
         />
       </Modal>
+
+      {reviewConfig && (
+        <ReviewPreDialog
+          open={preDialogOpen}
+          onClose={() => setPreDialogOpen(false)}
+          config={reviewConfig}
+          lastReviewDate={lastReviewDate}
+          lastTechnician={lastTechnician}
+          onSelect={handlePreDialogSelect}
+        />
+      )}
+
+      {wizardAuditId && (
+        <ReviewWizardModal
+          open={wizardOpen}
+          onClose={() => {
+            setWizardOpen(false)
+            qc.invalidateQueries({ queryKey: ['reviews', clientId] })
+          }}
+          auditId={wizardAuditId}
+          clientId={clientId}
+          clientName={client?.name}
+          reviewConfig={reviewConfig}
+          configMode={configMode}
+        />
+      )}
     </div>
   )
 }
 
 const REVIEW_CAT_LABELS: Record<string, string> = {
-  hardware: 'Hardware', vm: 'VM/Virt.', redes: 'Redes',
-  almacenamiento: 'Almacen.', backup: 'Backup', antivirus: 'Antivirus',
+  hardware: 'Hardware', vm: 'VM/Virt.', vm_idecnet: 'VM Idecnet',
+  redes: 'Redes', almacenamiento: 'Almacen.', backup: 'Backup', antivirus: 'Antivirus',
 }
 
-function ReviewsTab({ clientId }: { clientId: number }) {
+function ReviewsTab({ clientId, onNewReview, loadingReview }: { clientId: number; onNewReview: () => void; loadingReview: boolean }) {
   const qc = useQueryClient()
 
   const reviewsQ = useQuery<ReviewSession[]>({
@@ -317,6 +389,15 @@ function ReviewsTab({ clientId }: { clientId: number }) {
 
   return (
     <div className="space-y-3">
+      <div className="flex justify-end">
+        <button className="btn-primary" onClick={onNewReview} disabled={loadingReview}>
+          {loadingReview
+            ? <Loader2 size={15} className="animate-spin" />
+            : <PlayCircle size={15} />
+          }
+          {loadingReview ? 'Cargando…' : 'Nueva revisión'}
+        </button>
+      </div>
       {reviewsQ.isLoading ? (
         <div className="flex justify-center py-10">
           <span className="animate-spin h-6 w-6 border-2 border-primary/30 border-t-primary rounded-full" />
@@ -324,8 +405,8 @@ function ReviewsTab({ clientId }: { clientId: number }) {
       ) : reviews.length === 0 ? (
         <div className="text-center py-12 text-text-muted border border-dashed border-border rounded-xl">
           <ClipboardCheck size={32} className="mx-auto mb-3 opacity-40" />
-          <p>Sin revisiones manuales para este cliente.</p>
-          <p className="text-xs mt-1">Usa el botón "Revisión Manual" desde el detalle de una auditoría.</p>
+          <p>Sin revisiones para este cliente.</p>
+          <p className="text-xs mt-1">Pulsa "Nueva revisión" para comenzar.</p>
         </div>
       ) : (
         <div className="table-container">

@@ -4,6 +4,7 @@ from __future__ import annotations
 REVIEW_CATEGORIES: list[dict[str, str]] = [
     {"key": "hardware",       "label": "Hardware"},
     {"key": "vm",             "label": "VM / Virtualización"},
+    {"key": "vm_idecnet",     "label": "VM Idecnet"},
     {"key": "redes",          "label": "Redes"},
     {"key": "almacenamiento", "label": "Almacenamiento"},
     {"key": "backup",         "label": "Backup"},
@@ -90,6 +91,29 @@ REVIEW_ITEMS: dict[str, dict[str, list[dict[str, str]]]] = {
             {"key": "snapshots",      "label": "Snapshots actualizados"},
             {"key": "replication",    "label": "Replication / Sync Status"},
             {"key": "shares_active",  "label": "Shared Folders activos"},
+        ],
+    },
+    "vm_idecnet": {
+        "windows_server": [
+            {"key": "vm_status",     "label": "Estado de las VMs"},
+            {"key": "cpu_usage",     "label": "Uso de CPU"},
+            {"key": "memory_usage",  "label": "Uso de memoria"},
+            {"key": "disk_usage",    "label": "Uso de disco"},
+            {"key": "replication",   "label": "Replicación activa"},
+            {"key": "backups",       "label": "Backups recientes"},
+            {"key": "alerts",        "label": "Alertas activas"},
+        ],
+        "linux": [
+            {"key": "vm_status",     "label": "Estado de las VMs"},
+            {"key": "resource_usage","label": "Uso de recursos"},
+            {"key": "replication",   "label": "Replicación activa"},
+            {"key": "backups",       "label": "Backups recientes"},
+        ],
+        "vcenter": [
+            {"key": "vm_status",     "label": "Estado de las VMs Idecnet"},
+            {"key": "alarms",        "label": "Alarmas activas"},
+            {"key": "resource_usage","label": "Uso de recursos del cluster"},
+            {"key": "replication",   "label": "Replicación Idecnet"},
         ],
     },
     "backup": {

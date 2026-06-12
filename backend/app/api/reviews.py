@@ -1,5 +1,4 @@
 from __future__ import annotations
-import datetime as dt
 import logging
 import re
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,10 +7,15 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+import datetime as _dt
 from ..database import get_db
-from ..schemas.review import ReviewCreate, ReviewUpdate, ReviewOut
+from ..schemas.review import (
+    ReviewCreate, ReviewUpdate, ReviewOut,
+    ReviewConfigCreate, ReviewConfigOut, ReviewClientStatus,
+)
 from ..services.auth import get_current_user
 from ..models.review import ReviewSession
+from ..models.review_config import ReviewConfig
 from ..models.audit import Audit
 from ..models.device import Device
 from ..models.client import Client
@@ -48,10 +52,15 @@ def _build_export_data(db: Session, review: ReviewSession) -> dict:
             })
 
     raw_data: dict = review.review_data or {}
-    # Extract per-device category assignments stored by the frontend
     device_categories: dict | None = raw_data.get("_device_categories")
-    # Build clean results dict without the private key
     results = {k: v for k, v in raw_data.items() if not k.startswith("_")}
+
+    logo_path: str | None = None
+    if client and client.logo_path:
+        from pathlib import Path as _Path
+        p = _Path(client.logo_path)
+        if p.exists():
+            logo_path = str(p)
 
     return {
         "client_name": client.name if client else "",
@@ -61,8 +70,99 @@ def _build_export_data(db: Session, review: ReviewSession) -> dict:
         "devices": devices_info,
         "results": results,
         "device_categories": device_categories,
+        "logo_path": logo_path,
     }
 
+
+# ─── ReviewConfig endpoints ────────────────────────────────────────────────────
+
+@router.get("/configs/{client_id}", response_model=ReviewConfigOut)
+def get_config(
+    client_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    config = db.query(ReviewConfig).filter(ReviewConfig.client_id == client_id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Sin configuración de revisión")
+    return ReviewConfigOut.model_validate(config)
+
+
+@router.post("/configs", response_model=ReviewConfigOut, status_code=201)
+def upsert_config(
+    data: ReviewConfigCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    config = db.query(ReviewConfig).filter(ReviewConfig.client_id == data.client_id).first()
+    hosts_raw = [h.model_dump() for h in data.hosts]
+    if config:
+        config.client_nombre = data.client_nombre
+        config.configurado_por = data.configurado_por
+        config.fecha_configuracion = data.fecha_configuracion
+        config.hosts = hosts_raw
+    else:
+        config = ReviewConfig(
+            client_id=data.client_id,
+            client_nombre=data.client_nombre,
+            configurado_por=data.configurado_por,
+            fecha_configuracion=data.fecha_configuracion,
+            hosts=hosts_raw,
+        )
+        db.add(config)
+    db.commit()
+    db.refresh(config)
+    return ReviewConfigOut.model_validate(config)
+
+
+@router.get("/status", response_model=list[ReviewClientStatus])
+def get_review_status(
+    client_ids: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Returns review status for multiple clients (comma-separated client_ids)."""
+    try:
+        ids = [int(x.strip()) for x in client_ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=422, detail="client_ids debe ser lista de enteros separados por coma")
+
+    configs = {
+        c.client_id: c
+        for c in db.query(ReviewConfig).filter(ReviewConfig.client_id.in_(ids)).all()
+    }
+    today = _dt.date.today()
+    result = []
+
+    for cid in ids:
+        config = configs.get(cid)
+        last = (
+            db.query(ReviewSession)
+            .filter(ReviewSession.client_id == cid, ReviewSession.is_completed == True)
+            .order_by(ReviewSession.created_at.desc())
+            .first()
+        )
+        days = None
+        if last:
+            try:
+                rd = _dt.date.fromisoformat(last.review_date)
+                days = (today - rd).days
+            except (ValueError, TypeError):
+                pass
+        result.append(ReviewClientStatus(
+            client_id=cid,
+            has_config=config is not None,
+            configured_hosts=len(config.hosts) if config else 0,
+            last_review_date=last.review_date if last else None,
+            last_technician=last.technician_name if last else None,
+            last_review_completed=bool(last),
+            days_since_review=days,
+        ))
+
+    return result
+
+
+# ─── Checklist & Session endpoints ────────────────────────────────────────────
 
 @router.get("/checklist")
 def get_checklist(_: User = Depends(get_current_user)):
@@ -182,7 +282,7 @@ def export_excel(review_id: int, db: Session = Depends(get_db), _: User = Depend
     if not output_path.exists():
         raise HTTPException(status_code=500, detail="Error generando el Excel: fichero no creado")
 
-    session.exported_at = dt.datetime.utcnow()
+    session.exported_at = _dt.datetime.utcnow()
     db.commit()
 
     return FileResponse(
@@ -219,7 +319,7 @@ def export_pdf(review_id: int, db: Session = Depends(get_db), _: User = Depends(
     if not output_path.exists():
         raise HTTPException(status_code=500, detail="Error generando el PDF: fichero no creado")
 
-    session.exported_at = dt.datetime.utcnow()
+    session.exported_at = _dt.datetime.utcnow()
     db.commit()
 
     return FileResponse(str(output_path), media_type="application/pdf", filename=filename)
