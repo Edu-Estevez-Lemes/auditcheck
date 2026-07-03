@@ -84,7 +84,7 @@ if (-not (Test-Path $VENV_PYTHON)) {
 
 if (-not $SkipFrontend) {
     Write-Info "Node.js: $(node --version)"
-    Write-Info "npm:     $(npm --version)"
+    Write-Info "npm:     $(npm.cmd --version)"
 }
 Write-Info "Python (venv): $(& $VENV_PYTHON --version)"
 Write-OK "Prerequisitos OK"
@@ -98,9 +98,9 @@ if ($SkipFrontend) {
     Push-Location (Join-Path $ROOT "frontend")
     try {
         Write-Info "npm install..."
-        npm install --silent 2>&1 | Out-Null
+        npm.cmd install --silent | Out-Null
         Write-Info "npm run build..."
-        npm run build 2>&1 | Out-Null
+        npm.cmd run build | Out-Null
     } finally {
         Pop-Location
     }
