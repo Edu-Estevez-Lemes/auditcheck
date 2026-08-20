@@ -30,7 +30,9 @@ from .styles import (
     SEVERITY_STYLES, SEVERITY_LABELS, DEVICE_TYPE_LABELS,
     STATUS_STYLES, C_HEADER_BG, C_ACCENT, C_WHITE,
     C_CRITICAL, C_HIGH, C_MEDIUM, C_LOW, C_INFO,
+    report_colors, get_accent_color,
 )
+from .report_branding import get_report_logo_path, get_report_colors, REPORT_TAGLINE
 from ..config import settings
 from sqlalchemy.orm import Session
 from ..models.audit import Audit
@@ -65,15 +67,23 @@ def _device_type_label(device_type: str | None, custom_category: str | None = No
     return DEVICE_TYPE_LABELS.get(device_type or "", device_type or "")
 
 
-def _add_logo(ws: Worksheet, logo_path: Path | None, anchor: str = "A1") -> None:
-    if logo_path and logo_path.exists():
-        try:
-            img = XLImage(str(logo_path))
-            img.width = 120
-            img.height = 50
-            ws.add_image(img, anchor)
-        except Exception:
-            pass
+def _add_logo(ws: Worksheet, logo_path: Path | None, anchor: str = "A1",
+              max_w: int = 150, max_h: int = 55) -> None:
+    """Inserta un logo escalado proporcionalmente dentro del área max_w × max_h (píxeles)."""
+    if not logo_path or not logo_path.exists():
+        return
+    try:
+        img = XLImage(str(logo_path))
+        nat_w, nat_h = img.width, img.height   # dimensiones naturales del archivo
+        if nat_w and nat_h:
+            ratio = min(max_w / nat_w, max_h / nat_h)
+            img.width  = max(1, int(nat_w * ratio))
+            img.height = max(1, int(nat_h * ratio))
+        else:
+            img.width, img.height = max_w, max_h
+        ws.add_image(img, anchor)
+    except Exception:
+        pass
 
 
 def generate_excel_report(
@@ -93,34 +103,42 @@ def generate_excel_report(
     findings = db.query(Finding).filter(Finding.audit_id == audit_id).all()
 
     client_logo = Path(client.logo_path) if client and client.logo_path else None
-    corp_logo = settings.BRANDING_DIR / "logo.png"
+    corp_logo = get_report_logo_path()
+    colors = get_report_colors(db)
 
-    wb = Workbook()
-    wb.remove(wb.active)  # Eliminar hoja por defecto
+    with report_colors(colors["header"], colors["accent"], colors["separator"]):
+        wb = Workbook()
+        wb.remove(wb.active)  # Eliminar hoja por defecto
 
-    _sheet_resumen(wb, audit, client, technician, devices, findings, client_logo, corp_logo)
-    _sheet_inventario(wb, devices)
-    _sheet_red_puertos(wb, db, devices, audit_id)
-    _sheet_hallazgos(wb, findings, devices)
-    _sheet_recomendaciones(wb, findings)
-    if comparison_data:
-        _sheet_comparativa(wb, comparison_data)
-    else:
-        _sheet_comparativa_empty(wb)
-    _sheet_hardware(wb)
-    _sheet_backups(wb)
-    _sheet_vmware(wb)
-    _sheet_fortigate(wb)
-    _sheet_snmp(wb)
-    _sheet_windows(wb)
-    _sheet_nas(wb)
-    _sheet_ilo_idrac(wb)
-    _sheet_metadata(wb, audit, client, technician)
+        _sheet_resumen(wb, audit, client, technician, devices, findings, client_logo, corp_logo)
+        _sheet_inventario(wb, devices)
+        _sheet_red_puertos(wb, db, devices, audit_id)
+        _sheet_hallazgos(wb, findings, devices)
+        _sheet_recomendaciones(wb, findings)
+        if comparison_data:
+            _sheet_comparativa(wb, comparison_data)
+        else:
+            _sheet_comparativa_empty(wb)
+        _sheet_hardware(wb)
+        _sheet_backups(wb)
+        _sheet_vmware(wb)
+        _sheet_fortigate(wb)
+        _sheet_snmp(wb)
+        _sheet_windows(wb)
+        _sheet_nas(wb)
+        _sheet_ilo_idrac(wb)
+        _sheet_metadata(wb, audit, client, technician)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    data = buf.getvalue()
+        # Pie de página en todas las hojas (visible en impresión/vista previa)
+        for ws in wb.worksheets:
+            ws.oddFooter.left.text  = REPORT_TAGLINE
+            ws.oddFooter.right.text = "Pág. &P / &N"
+            ws.page_margins.bottom  = 1.2   # pulgadas
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        data = buf.getvalue()
 
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -142,23 +160,26 @@ def _sheet_resumen(wb, audit, client, technician, devices, findings, client_logo
     ws.sheet_view.showGridLines = False
 
     # Logos — corporativo izquierda, cliente derecha
-    _add_logo(ws, corp_logo, "A1")
+    # Filas 1-3 reservadas para logos; altura suficiente para que el imagen flote visible
+    for _r in (1, 2, 3):
+        ws.row_dimensions[_r].height = 22
+    _add_logo(ws, corp_logo, "A1", max_w=160, max_h=55)
     if client_logo:
-        _add_logo(ws, client_logo, "G1")
+        _add_logo(ws, client_logo, "G1", max_w=140, max_h=55)
 
     # Título
     ws.row_dimensions[4].height = 40
     ws.merge_cells("A4:H4")
     cell = ws["A4"]
     cell.value = "INFORME DE AUDITORÍA TÉCNICA"
-    apply_style(cell, STYLE_TITLE)
+    apply_style(cell, STYLE_TITLE())
 
     row = 6
 
     # ── Sección: Datos del cliente ──────────────────────────────────────────────
     ws.merge_cells(f"A{row}:H{row}")
     ws.cell(row=row, column=1, value="DATOS DEL CLIENTE")
-    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER)
+    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER())
     row += 1
 
     client_pairs = [
@@ -181,7 +202,7 @@ def _sheet_resumen(wb, audit, client, technician, devices, findings, client_logo
     # ── Sección: Datos de la revisión ───────────────────────────────────────────
     ws.merge_cells(f"A{row}:H{row}")
     ws.cell(row=row, column=1, value="DATOS DE LA REVISIÓN")
-    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER)
+    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER())
     row += 1
 
     audit_pairs = [
@@ -204,7 +225,7 @@ def _sheet_resumen(wb, audit, client, technician, devices, findings, client_logo
     # ── Resumen de hallazgos ────────────────────────────────────────────────────
     ws.merge_cells(f"A{row}:H{row}")
     ws.cell(row=row, column=1, value="RESUMEN DE HALLAZGOS")
-    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER)
+    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER())
     row += 1
 
     sev_counts = {s: 0 for s in ["critical", "high", "medium", "low", "informational"]}
@@ -213,7 +234,7 @@ def _sheet_resumen(wb, audit, client, technician, devices, findings, client_logo
             sev_counts[f.severity] += 1
 
     headers = ["Crítico", "Alto", "Medio", "Bajo", "Informativo", "Total Hallazgos", "Dispositivos", "Estado"]
-    _write_row(ws, row, headers, STYLE_HEADER)
+    _write_row(ws, row, headers, STYLE_HEADER())
     row += 1
 
     total_findings = sum(sev_counts.values())
@@ -225,7 +246,7 @@ def _sheet_resumen(wb, audit, client, technician, devices, findings, client_logo
     ]
     for col_idx, (val, sev) in enumerate(zip(values[:5], ["critical", "high", "medium", "low", "informational"]), 1):
         cell = ws.cell(row=row, column=col_idx, value=val)
-        apply_style(cell, {**SEVERITY_STYLES[sev], "border": STYLE_HEADER["border"]})
+        apply_style(cell, {**SEVERITY_STYLES[sev], "border": STYLE_HEADER()["border"]})
     for col_idx, val in enumerate(values[5:], 6):
         cell = ws.cell(row=row, column=col_idx, value=val)
         apply_style(cell, STYLE_ROW_EVEN)
@@ -244,7 +265,7 @@ def _sheet_inventario(wb, devices: list[Device]):
         "IP", "Hostname", "Nombre visible", "NetBIOS", "MAC", "Fabricante", "SO/Tipo",
         "Tipo Dispositivo", "Ubicación", "Observaciones", "Estado", "RTT (ms)", "Puertos Abiertos",
     ]
-    _write_row(ws, 1, headers, STYLE_HEADER)
+    _write_row(ws, 1, headers, STYLE_HEADER())
 
     widths = [16, 28, 26, 22, 18, 22, 22, 20, 20, 36, 10, 10, 14]
     for i, w in enumerate(widths, 1):
@@ -278,7 +299,7 @@ def _sheet_red_puertos(wb, db: Session, devices: list[Device], audit_id: int):
     ws.freeze_panes = "A2"
 
     headers = ["IP", "Hostname", "Puerto", "Protocolo", "Servicio", "Estado", "Banner", "Riesgo"]
-    _write_row(ws, 1, headers, STYLE_HEADER)
+    _write_row(ws, 1, headers, STYLE_HEADER())
 
     widths = [16, 28, 8, 10, 16, 10, 40, 10]
     for i, w in enumerate(widths, 1):
@@ -300,7 +321,7 @@ def _sheet_red_puertos(wb, db: Session, devices: list[Device], audit_id: int):
             if port.is_risky:
                 from openpyxl.styles import PatternFill
                 for col in range(1, len(headers) + 1):
-                    ws.cell(row=row, column=col).fill = PatternFill("solid", fgColor="FFF3CD")
+                    ws.cell(row=row, column=col).fill = PatternFill("solid", fgColor="B4B5DF")
             row += 1
 
     ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}1"
@@ -313,7 +334,7 @@ def _sheet_hallazgos(wb, findings: list[Finding], devices: list[Device]):
 
     device_map = {d.id: d for d in devices}
     headers = ["Severidad", "Categoría", "Dispositivo", "Título", "Descripción", "Evidencia", "Recomendación", "Estado"]
-    _write_row(ws, 1, headers, STYLE_HEADER)
+    _write_row(ws, 1, headers, STYLE_HEADER())
     widths = [14, 16, 20, 45, 50, 40, 50, 14]
     for i, w in enumerate(widths, 1):
         _set_col_width(ws, i, w)
@@ -355,10 +376,10 @@ def _sheet_recomendaciones(wb, findings: list[Finding]):
 
     ws.merge_cells("A1:F1")
     ws.cell(row=1, column=1, value="RECOMENDACIONES Y PLAN DE ACCIÓN")
-    apply_style(ws.cell(row=1, column=1), STYLE_SUBHEADER)
+    apply_style(ws.cell(row=1, column=1), STYLE_SUBHEADER())
 
     headers = ["Prioridad", "Severidad", "Área", "Acción Recomendada", "Impacto", "Estado"]
-    _write_row(ws, 2, headers, STYLE_HEADER)
+    _write_row(ws, 2, headers, STYLE_HEADER())
     widths = [10, 14, 20, 70, 30, 14]
     for i, w in enumerate(widths, 1):
         _set_col_width(ws, i, w)
@@ -388,7 +409,7 @@ def _sheet_comparativa(wb, comparison_data: dict):
 
     ws.merge_cells("A1:F1")
     ws.cell(row=1, column=1, value="ANÁLISIS COMPARATIVO ENTRE REVISIONES")
-    apply_style(ws.cell(row=1, column=1), STYLE_SUBHEADER)
+    apply_style(ws.cell(row=1, column=1), STYLE_SUBHEADER())
 
     row = 3
     sections = [
@@ -402,7 +423,7 @@ def _sheet_comparativa(wb, comparison_data: dict):
     for section_title, items, section_type in sections:
         ws.merge_cells(f"A{row}:F{row}")
         ws.cell(row=row, column=1, value=f"{section_title} ({len(items)})")
-        apply_style(ws.cell(row=row, column=1), STYLE_HEADER)
+        apply_style(ws.cell(row=row, column=1), STYLE_HEADER())
         row += 1
 
         if not items:
@@ -440,14 +461,14 @@ def _sheet_comparativa_empty(wb):
     ws = wb.create_sheet("Comparativa")
     ws.merge_cells("A1:D1")
     ws.cell(row=1, column=1, value="COMPARATIVA - Sin datos de revisión anterior")
-    apply_style(ws.cell(row=1, column=1), STYLE_SUBHEADER)
+    apply_style(ws.cell(row=1, column=1), STYLE_SUBHEADER())
 
 
 def _sheet_placeholder(wb, name: str, msg: str = "Módulo disponible en próxima actualización"):
     ws = wb.create_sheet(name)
     ws.merge_cells("A1:D1")
     ws.cell(row=1, column=1, value=name.upper())
-    apply_style(ws.cell(row=1, column=1), STYLE_SUBHEADER)
+    apply_style(ws.cell(row=1, column=1), STYLE_SUBHEADER())
     ws.cell(row=3, column=1, value=msg)
     apply_style(ws.cell(row=3, column=1), STYLE_VALUE)
 
@@ -494,8 +515,7 @@ _CMP_SEV_COLORS = {
     "critical": C_CRITICAL, "high": C_HIGH, "medium": C_MEDIUM,
     "low": C_LOW, "informational": C_INFO,
 }
-_CMP_COLOR_ANTERIOR = "4A4066"
-_CMP_COLOR_ACTUAL = C_ACCENT
+_CMP_COLOR_ANTERIOR = "7A99AC"   # Azul gris neutro (revisión anterior) — sin cambios
 
 
 def generate_comparison_excel_report(
@@ -522,21 +542,23 @@ def generate_comparison_excel_report(
     recommendations = [f for f in findings_b if f.recommendation and f.title in rec_titles]
 
     client_logo = Path(client.logo_path) if client and client.logo_path else None
-    corp_logo = settings.BRANDING_DIR / "logo.png"
+    corp_logo = get_report_logo_path()
+    colors = get_report_colors(db)
 
-    wb = Workbook()
-    wb.remove(wb.active)
+    with report_colors(colors["header"], colors["accent"], colors["separator"]):
+        wb = Workbook()
+        wb.remove(wb.active)
 
-    _sheet_cmp_resumen(wb, audit_a, audit_b, client, technician, data, client_logo, corp_logo)
-    _sheet_cmp_dispositivos(wb, data)
-    _sheet_cmp_puertos(wb, data)
-    _sheet_cmp_riesgos(wb, data)
-    _sheet_cmp_recomendaciones(wb, recommendations)
+        _sheet_cmp_resumen(wb, audit_a, audit_b, client, technician, data, client_logo, corp_logo)
+        _sheet_cmp_dispositivos(wb, data)
+        _sheet_cmp_puertos(wb, data)
+        _sheet_cmp_riesgos(wb, data)
+        _sheet_cmp_recomendaciones(wb, recommendations)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    out = buf.getvalue()
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        out = buf.getvalue()
 
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -565,10 +587,10 @@ def _cmp_table_block(ws, row: int, title: str, items: list[dict], headers: list[
 
     ws.merge_cells(f"A{row}:{last_col}{row}")
     ws.cell(row=row, column=1, value=f"{title} ({len(items)})")
-    apply_style(ws.cell(row=row, column=1), STYLE_HEADER)
+    apply_style(ws.cell(row=row, column=1), STYLE_HEADER())
     row += 1
 
-    _write_row(ws, row, headers, STYLE_SUBHEADER)
+    _write_row(ws, row, headers, STYLE_SUBHEADER())
     row += 1
 
     if not items:
@@ -589,20 +611,22 @@ def _sheet_cmp_resumen(wb, audit_a, audit_b, client, technician, data: dict, cli
     ws = wb.create_sheet("Resumen Comparativa")
     ws.sheet_view.showGridLines = False
 
-    _add_logo(ws, corp_logo, "A1")
+    for _r in (1, 2, 3):
+        ws.row_dimensions[_r].height = 22
+    _add_logo(ws, corp_logo, "A1", max_w=160, max_h=55)
     if client_logo:
-        _add_logo(ws, client_logo, "G1")
+        _add_logo(ws, client_logo, "G1", max_w=140, max_h=55)
 
     ws.row_dimensions[4].height = 40
     ws.merge_cells("A4:H4")
     cell = ws["A4"]
     cell.value = "ANÁLISIS COMPARATIVO ENTRE REVISIONES"
-    apply_style(cell, STYLE_TITLE)
+    apply_style(cell, STYLE_TITLE())
 
     row = 6
     ws.merge_cells(f"A{row}:H{row}")
     ws.cell(row=row, column=1, value="DATOS DE LA COMPARATIVA")
-    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER)
+    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER())
     row += 1
 
     info_pairs = [
@@ -620,7 +644,7 @@ def _sheet_cmp_resumen(wb, audit_a, audit_b, client, technician, data: dict, cli
     row += 1
     ws.merge_cells(f"A{row}:H{row}")
     ws.cell(row=row, column=1, value="RESUMEN COMPARATIVO")
-    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER)
+    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER())
     row += 1
 
     devices_diff = data["devices_after"] - data["devices_before"]
@@ -638,12 +662,12 @@ def _sheet_cmp_resumen(wb, audit_a, audit_b, client, technician, data: dict, cli
         ("Riesgos nuevos", len(data["new_findings"]), "warning" if data["new_findings"] else None),
         ("Riesgos resueltos", len(data["resolved_findings"]), "ok" if data["resolved_findings"] else None),
     ]
-    _write_row(ws, row, [k[0] for k in kpis], STYLE_HEADER)
+    _write_row(ws, row, [k[0] for k in kpis], STYLE_HEADER())
     row += 1
     for col_idx, (_label, value, status) in enumerate(kpis, 1):
         c = ws.cell(row=row, column=col_idx, value=value)
         style = STATUS_STYLES.get(status) if status else None
-        apply_style(c, {**style, "border": STYLE_HEADER["border"]} if style else STYLE_VALUE)
+        apply_style(c, {**style, "border": STYLE_HEADER()["border"]} if style else STYLE_VALUE)
     row += 2
 
     summary_text = (
@@ -665,7 +689,7 @@ def _sheet_cmp_resumen(wb, audit_a, audit_b, client, technician, data: dict, cli
     # ── Tablas auxiliares + gráficas (KPI visual) ───────────────────────────
     ws.merge_cells(f"A{row}:H{row}")
     ws.cell(row=row, column=1, value="EVOLUCIÓN VISUAL")
-    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER)
+    apply_style(ws.cell(row=row, column=1), STYLE_SUBHEADER())
     row += 1
 
     t1_row = row
@@ -692,7 +716,7 @@ def _sheet_cmp_resumen(wb, audit_a, audit_b, client, technician, data: dict, cli
     chart_devices.title = "Dispositivos: actual vs anterior"
     chart_devices.add_data(Reference(ws, min_col=2, max_col=3, min_row=t1_row, max_row=t1_row + 1), titles_from_data=True)
     chart_devices.set_categories(Reference(ws, min_col=1, min_row=t1_row + 1, max_row=t1_row + 1))
-    _style_bar_series(chart_devices, [_CMP_COLOR_ANTERIOR, _CMP_COLOR_ACTUAL])
+    _style_bar_series(chart_devices, [_CMP_COLOR_ANTERIOR, get_accent_color()])
     chart_devices.height, chart_devices.width = 7.5, 11
     ws.add_chart(chart_devices, f"E{t1_row}")
 
@@ -702,7 +726,7 @@ def _sheet_cmp_resumen(wb, audit_a, audit_b, client, technician, data: dict, cli
     chart_risks.title = "Riesgos por severidad: actual vs anterior"
     chart_risks.add_data(Reference(ws, min_col=2, max_col=3, min_row=t2_row, max_row=t2_row + len(_CMP_SEV_ORDER)), titles_from_data=True)
     chart_risks.set_categories(Reference(ws, min_col=1, min_row=t2_row + 1, max_row=t2_row + len(_CMP_SEV_ORDER)))
-    _style_bar_series(chart_risks, [_CMP_COLOR_ANTERIOR, _CMP_COLOR_ACTUAL])
+    _style_bar_series(chart_risks, [_CMP_COLOR_ANTERIOR, get_accent_color()])
     chart_risks.height, chart_risks.width = 7.5, 11
     ws.add_chart(chart_risks, f"N{t1_row}")
 
@@ -771,7 +795,7 @@ def _sheet_cmp_puertos(wb, data: dict):
     chart.add_data(Reference(ws, min_col=2, min_row=chart_row, max_row=chart_row + 2), titles_from_data=True)
     chart.set_categories(Reference(ws, min_col=1, min_row=chart_row + 1, max_row=chart_row + 2))
     if chart.series:
-        chart.series[0].graphicalProperties = GraphicalProperties(solidFill=_CMP_COLOR_ACTUAL)
+        chart.series[0].graphicalProperties = GraphicalProperties(solidFill=get_accent_color())
     chart.legend = None
     chart.height, chart.width = 7.5, 11
     ws.add_chart(chart, f"E{chart_row}")
@@ -805,10 +829,10 @@ def _sheet_cmp_recomendaciones(wb, recommendations: list[Finding]):
 
     ws.merge_cells("A1:E1")
     ws.cell(row=1, column=1, value="RECOMENDACIONES — RIESGOS NUEVOS Y PERSISTENTES")
-    apply_style(ws.cell(row=1, column=1), STYLE_SUBHEADER)
+    apply_style(ws.cell(row=1, column=1), STYLE_SUBHEADER())
 
     headers = ["Prioridad", "Severidad", "Hallazgo", "Recomendación", "Categoría"]
-    _write_row(ws, 2, headers, STYLE_HEADER)
+    _write_row(ws, 2, headers, STYLE_HEADER())
     for i, w in enumerate([10, 14, 40, 70, 20], 1):
         _set_col_width(ws, i, w)
 

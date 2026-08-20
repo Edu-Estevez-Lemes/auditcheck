@@ -19,6 +19,10 @@ api.interceptors.response.use(
       useAuthStore.getState().logout()
       window.location.href = '/login'
     }
+    if (err.response?.status === 423) {
+      // Bloque 2 — vault bloqueado: no cerramos sesión, solo pedimos la passphrase.
+      import('../store/vaultStore').then(({ useVaultStore }) => useVaultStore.getState().promptUnlock())
+    }
     return Promise.reject(err)
   }
 )
@@ -51,6 +55,7 @@ export const credentialsApi = {
   create: (data: unknown) => api.post('/credentials/', data),
   update: (id: number, data: unknown) => api.put(`/credentials/${id}`, data),
   delete: (id: number) => api.delete(`/credentials/${id}`),
+  getPassword: (id: number) => api.get(`/credentials/${id}/password`),
   test: (id: number, data: { host: string; port: number }) =>
     api.post(`/credentials/${id}/test`, data),
 }
@@ -63,6 +68,7 @@ export const auditsApi = {
   create: (data: unknown) => api.post('/audits/', data),
   update: (id: number, data: unknown) => api.put(`/audits/${id}`, data),
   delete: (id: number) => api.delete(`/audits/${id}`),
+  deleteBatch: (ids: number[]) => api.delete('/audits/batch', { data: { ids } }),
   getDevices: (id: number) => api.get(`/audits/${id}/devices`),
   updateDevice: (auditId: number, deviceId: number, data: unknown) =>
     api.put(`/audits/${auditId}/devices/${deviceId}`, data),
@@ -80,6 +86,7 @@ export const auditsApi = {
   compare: (aId: number, bId: number) => api.get(`/audits/compare/${aId}/${bId}`),
   compareExcel: (aId: number, bId: number) =>
     api.get(`/audits/compare/${aId}/${bId}/excel`, { responseType: 'blob' }),
+  getNetworkMap: (id: number) => api.get(`/audits/${id}/network-map`),
 }
 
 // Escaneo
@@ -111,13 +118,15 @@ export const accessApi = {
 
 // Revisiones Manuales
 export const reviewsApi = {
-  checklist: () => api.get('/reviews/checklist'),
+  checklist: (clientId?: number) =>
+    api.get('/reviews/checklist', { params: clientId ? { client_id: clientId } : {} }),
   list: (auditId?: number, clientId?: number) =>
     api.get('/reviews/', { params: { ...(auditId ? { audit_id: auditId } : {}), ...(clientId ? { client_id: clientId } : {}) } }),
   create: (data: unknown) => api.post('/reviews/', data),
   update: (id: number, data: unknown) => api.put(`/reviews/${id}`, data),
   last: (clientId: number) => api.get('/reviews/last', { params: { client_id: clientId } }),
   delete: (id: number) => api.delete(`/reviews/${id}`),
+  deleteBatch: (ids: number[]) => api.delete('/reviews/batch', { data: { ids } }),
   exportExcel: (id: number) => api.get(`/reviews/${id}/export/excel`, { responseType: 'blob' }),
   exportPdf: (id: number) => api.get(`/reviews/${id}/export/pdf`, { responseType: 'blob' }),
   // Configuración por cliente
@@ -128,17 +137,104 @@ export const reviewsApi = {
     api.get('/reviews/status', { params: { client_ids: clientIds.join(',') } }),
 }
 
+// Marca de informes (logo + colores corporativos de PDF/Excel)
+export const reportBrandingApi = {
+  getConfig: () => api.get('/branding/report-config'),
+  updateConfig: (data: { header_color: string; accent_color: string; separator_color: string }) =>
+    api.put('/branding/report-config', data),
+  uploadLogo: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post('/branding/report-logo', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+}
+
+// Categorías de revisión (gestión — cualquier usuario autenticado)
+export const reviewCategoriesApi = {
+  list: () => api.get('/reviews/categories/'),
+  create: (data: { label: string; key?: string; order?: number }) => api.post('/reviews/categories/', data),
+  update: (id: number, data: { label?: string; order?: number }) => api.put(`/reviews/categories/${id}`, data),
+  reorder: (order: number[]) => api.put('/reviews/categories/reorder', { order }),
+  delete: (id: number, force = false) => api.delete(`/reviews/categories/${id}`, { params: { force } }),
+}
+
+// Plantillas de checklist (privadas por usuario)
+export const reviewTemplatesApi = {
+  list: () => api.get('/reviews/templates/'),
+  create: (data: unknown) => api.post('/reviews/templates/', data),
+  get: (id: number) => api.get(`/reviews/templates/${id}`),
+  update: (id: number, data: unknown) => api.put(`/reviews/templates/${id}`, data),
+  delete: (id: number) => api.delete(`/reviews/templates/${id}`),
+  affectedClients: (id: number) => api.get(`/reviews/templates/${id}/affected-clients`),
+  diff: (id: number, clientId: number) => api.get(`/reviews/templates/${id}/diff/${clientId}`),
+  propagate: (id: number, clientIds: number[]) =>
+    api.post(`/reviews/templates/${id}/propagate`, { client_ids: clientIds }),
+}
+
+// Consola de Red
+export const consoleApi = {
+  startSession: () => api.post('/ws/console/session'),
+}
+
 // Auth
 export const authApi = {
+  bootstrapStatus: () => api.get('/auth/bootstrap-status'),
   login: (username: string, password: string) => {
     const form = new FormData()
     form.append('username', username)
     form.append('password', password)
     return api.post('/auth/login', form)
   },
+  logout: () => api.post('/auth/logout'),
   me: () => api.get('/auth/me'),
   updateMe: (data: unknown) => api.put('/auth/me', data),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    api.post('/auth/change-password', data),
   listUsers: () => api.get('/auth/users'),
   createUser: (data: unknown) => api.post('/auth/users', data),
+  updateUser: (id: number, data: unknown) => api.put(`/auth/users/${id}`, data),
   deleteUser: (id: number) => api.delete(`/auth/users/${id}`),
+  updateUserRole: (id: number, role: string) => api.put(`/auth/users/${id}/role`, { role }),
+  resetPassword: (id: number) => api.put(`/auth/users/${id}/reset-password`),
+}
+
+// Registro de actividad
+export const auditLogApi = {
+  list: (params?: { user_id?: number; action?: string; date_from?: string; date_to?: string }) =>
+    api.get('/audit-log/', { params }),
+}
+
+// Bloque 3 — Base de datos: backup, exportación cifrada, importación/restauración
+export const databaseApi = {
+  info: () => api.get('/database/info'),
+  listBackups: () => api.get('/database/backups'),
+  createBackup: () => api.post('/database/backup'),
+  openBackupsFolder: () => api.post('/database/open-backups-folder'),
+  openExportsFolder: () => api.post('/database/open-exports-folder'),
+  export: (data: {
+    client_ids: number[] | null
+    include_credentials: boolean
+    password_mode: 'vault' | 'custom'
+    password: string
+    confirm_password?: string
+  }) => api.post('/database/export', data, { responseType: 'blob' }),
+  importPreview: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post('/database/import/preview', form)
+  },
+  importConfirm: (file: File, data: {
+    password: string
+    mode: 'restore' | 'merge' | 'replace'
+    include_credentials: boolean
+    confirm_word?: string
+  }) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('password', data.password)
+    form.append('mode', data.mode)
+    form.append('include_credentials', String(data.include_credentials))
+    if (data.confirm_word) form.append('confirm_word', data.confirm_word)
+    return api.post('/database/import/confirm', form)
+  },
 }

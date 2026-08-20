@@ -8,6 +8,8 @@ interface Props {
   clients: ClientSummary[]
   onSuccess: (auditId: number) => void
   onCancel: () => void
+  initialClientId?: number
+  onScanningChange?: (scanning: boolean) => void
 }
 
 type Phase = 'config' | 'scanning' | 'done' | 'error'
@@ -20,10 +22,10 @@ interface ScanProgress {
   events: string[]
 }
 
-export function AuditWizard({ clients, onSuccess, onCancel }: Props) {
+export function AuditWizard({ clients, onSuccess, onCancel, initialClientId, onScanningChange }: Props) {
   const [phase, setPhase] = useState<Phase>('config')
   const [form, setForm] = useState({
-    client_id: '',
+    client_id: initialClientId ? String(initialClientId) : '',
     audit_name: '',
     use_client_ranges: true,
     extra_ranges: '',
@@ -44,6 +46,7 @@ export function AuditWizard({ clients, onSuccess, onCancel }: Props) {
   function safeSetPhase(p: Phase) {
     phaseRef.current = p
     setPhase(p)
+    onScanningChange?.(p === 'scanning')
   }
 
   useEffect(() => {
@@ -162,16 +165,18 @@ export function AuditWizard({ clients, onSuccess, onCancel }: Props) {
     return (
       <div className="space-y-5">
         <div className="grid grid-cols-2 gap-4">
-          <div className="form-group col-span-2">
-            <label className="label">Cliente *</label>
-            <select className="input" value={form.client_id}
-              onChange={(e) => setForm({ ...form, client_id: e.target.value })}>
-              <option value="">Selecciona un cliente...</option>
-              {clients.filter((c) => c.is_active).map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
+          {!initialClientId && (
+            <div className="form-group col-span-2">
+              <label className="label">Cliente *</label>
+              <select className="input" value={form.client_id}
+                onChange={(e) => setForm({ ...form, client_id: e.target.value })}>
+                <option value="">Selecciona un cliente...</option>
+                {clients.filter((c) => c.is_active).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="form-group col-span-2">
             <label className="label">Nombre de la revisión *</label>
             <input className="input" placeholder="ej: Revisión mensual Mayo 2026"

@@ -3,6 +3,7 @@ import logging
 import re
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -13,18 +14,24 @@ from ..schemas.review import (
     ReviewCreate, ReviewUpdate, ReviewOut,
     ReviewConfigCreate, ReviewConfigOut, ReviewClientStatus,
 )
-from ..services.auth import get_current_user
+from ..services.auth import get_current_user, get_admin_user
 from ..models.review import ReviewSession
 from ..models.review_config import ReviewConfig
 from ..models.audit import Audit
 from ..models.device import Device
 from ..models.client import Client
 from ..models.user import User
-from ..reports.review_items import REVIEW_ITEMS, REVIEW_CATEGORIES
+from ..reports.review_items import REVIEW_ITEMS, CATEGORY_DEVICE_TYPES
 from ..reports.review_excel import generate_review_excel
+from ..reports.report_branding import get_report_colors
+from ..services import review_checklist as checklist_svc
 from ..config import settings
 
 router = APIRouter(prefix="/reviews", tags=["Revisiones Manuales"])
+
+
+class _BatchDeleteBody(BaseModel):
+    ids: list[int]
 
 _WIN_RESERVED = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
@@ -53,6 +60,8 @@ def _build_export_data(db: Session, review: ReviewSession) -> dict:
 
     raw_data: dict = review.review_data or {}
     device_categories: dict | None = raw_data.get("_device_categories")
+    removed_items: dict = raw_data.get("_removed_items") or {}
+    custom_items: dict = raw_data.get("_custom_items") or {}
     results = {k: v for k, v in raw_data.items() if not k.startswith("_")}
 
     logo_path: str | None = None
@@ -62,6 +71,8 @@ def _build_export_data(db: Session, review: ReviewSession) -> dict:
         if p.exists():
             logo_path = str(p)
 
+    category_labels = {c.key: c.label for c in checklist_svc.list_categories(db)}
+
     return {
         "client_name": client.name if client else "",
         "technician_name": review.technician_name,
@@ -70,6 +81,10 @@ def _build_export_data(db: Session, review: ReviewSession) -> dict:
         "devices": devices_info,
         "results": results,
         "device_categories": device_categories,
+        "removed_items": removed_items,
+        "custom_items": custom_items,
+        "category_labels": category_labels,
+        "report_colors": get_report_colors(db),
         "logo_path": logo_path,
     }
 
@@ -101,6 +116,9 @@ def upsert_config(
         config.configurado_por = data.configurado_por
         config.fecha_configuracion = data.fecha_configuracion
         config.hosts = hosts_raw
+        config.template_id = data.template_id
+        config.removed_items = data.removed_items
+        config.custom_items = data.custom_items
     else:
         config = ReviewConfig(
             client_id=data.client_id,
@@ -108,6 +126,9 @@ def upsert_config(
             configurado_por=data.configurado_por,
             fecha_configuracion=data.fecha_configuracion,
             hosts=hosts_raw,
+            template_id=data.template_id,
+            removed_items=data.removed_items,
+            custom_items=data.custom_items,
         )
         db.add(config)
     db.commit()
@@ -165,8 +186,45 @@ def get_review_status(
 # ─── Checklist & Session endpoints ────────────────────────────────────────────
 
 @router.get("/checklist")
-def get_checklist(_: User = Depends(get_current_user)):
-    return {"categories": REVIEW_CATEGORIES, "items": REVIEW_ITEMS}
+def get_checklist(
+    client_id: int | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    categories = [
+        {"key": c.key, "label": c.label}
+        for c in checklist_svc.list_categories(db)
+    ]
+
+    removed_items: dict = {}
+    custom_items: dict = {}
+    if client_id is not None:
+        config = db.query(ReviewConfig).filter(ReviewConfig.client_id == client_id).first()
+        if config:
+            removed_items = config.removed_items or {}
+            custom_items = config.custom_items or {}
+
+    items: dict[str, dict[str, list[dict]]] = {}
+    for cat_key, by_type in REVIEW_ITEMS.items():
+        items[cat_key] = {}
+        for device_type in by_type:
+            items[cat_key][device_type] = checklist_svc.get_effective_items(
+                cat_key, device_type, removed_items, custom_items,
+            )
+    # Categorías nuevas (sin ítems por defecto) sólo aportan ítems personalizados.
+    for cat_key, by_type in custom_items.items():
+        items.setdefault(cat_key, {})
+        for device_type, custom in by_type.items():
+            if device_type not in items[cat_key]:
+                items[cat_key][device_type] = checklist_svc.get_effective_items(
+                    cat_key, device_type, removed_items, custom_items,
+                )
+
+    return {
+        "categories": categories,
+        "items": items,
+        "category_device_types": CATEGORY_DEVICE_TYPES,
+    }
 
 
 @router.get("/last", response_model=ReviewOut | None)
@@ -253,8 +311,16 @@ def update_review(
     return ReviewOut.model_validate(session)
 
 
+@router.delete("/batch", status_code=204)
+def batch_delete_reviews(body: _BatchDeleteBody, db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
+    sessions = db.query(ReviewSession).filter(ReviewSession.id.in_(body.ids)).all()
+    for s in sessions:
+        db.delete(s)
+    db.commit()
+
+
 @router.delete("/{review_id}", status_code=204)
-def delete_review(review_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def delete_review(review_id: int, db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
     session = db.query(ReviewSession).filter(ReviewSession.id == review_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Revisión no encontrada")

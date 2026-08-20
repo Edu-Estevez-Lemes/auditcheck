@@ -27,6 +27,12 @@ data/*.db-wal
 data/.key
 data/clients/
 data/audits/
+data/vault_backups/
+data/backups/
+data/exports/
+
+# Cache de herramientas de build (descargas locales, no versionar)
+.build_cache/
 
 # Node / Frontend
 frontend/node_modules/

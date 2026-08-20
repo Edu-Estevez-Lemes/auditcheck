@@ -11,7 +11,7 @@ from ..services.client import (
     create_client, update_client, delete_client,
     add_ip_range, delete_ip_range,
 )
-from ..services.auth import get_current_user
+from ..services.auth import get_current_user, require_role
 from ..models.user import User
 from ..config import settings
 
@@ -39,7 +39,7 @@ def update(client_id: int, data: ClientUpdate, db: Session = Depends(get_db), _:
 
 
 @router.delete("/{client_id}", status_code=204)
-def delete(client_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def delete(client_id: int, db: Session = Depends(get_db), _: User = Depends(require_role("superadmin", "admin"))):
     delete_client(db, client_id)
 
 

@@ -1,96 +1,69 @@
-"""Definición de ítems de revisión manual por categoría y tipo de dispositivo."""
+"""Definición de ítems de revisión manual por categoría.
+
+La mayoría de categorías tienen una lista de ítems única ("_all"), válida
+para cualquier tipo de dispositivo asignado a esa categoría. Las categorías
+"vm_idecnet" y "antivirus" son la excepción: conservan el desglose por tipo
+de dispositivo (device_type) que ya tenían antes de este rediseño.
+"""
 from __future__ import annotations
 
 REVIEW_CATEGORIES: list[dict[str, str]] = [
-    {"key": "hardware",       "label": "Hardware"},
-    {"key": "vm",             "label": "VM / Virtualización"},
-    {"key": "vm_idecnet",     "label": "VM Idecnet"},
-    {"key": "redes",          "label": "Redes"},
-    {"key": "almacenamiento", "label": "Almacenamiento"},
-    {"key": "backup",         "label": "Backup"},
-    {"key": "antivirus",      "label": "Antivirus"},
+    {"key": "hardware",        "label": "Hardware"},
+    {"key": "vm",              "label": "Máquinas Virtuales"},
+    {"key": "vm_idecnet",      "label": "VM Idecnet"},
+    {"key": "redes",           "label": "Redes"},
+    {"key": "almacenamiento",  "label": "Almacenamiento"},
+    {"key": "backup",          "label": "Backup"},
+    {"key": "antivirus",       "label": "Antivirus"},
 ]
 
-# category → device_type → list[{key, label}]
+# Categorías planas ("_all"): qué tipos de dispositivo las sugieren
+# automáticamente en el wizard (el contenido del checklist ya no depende
+# del tipo, pero la sugerencia de categoría por host sigue siendo útil).
+CATEGORY_DEVICE_TYPES: dict[str, list[str]] = {
+    "hardware":        ["windows_server", "linux", "ilo", "idrac"],
+    "vm":              ["vcenter", "esxi", "vmware_appliance", "windows_server", "linux"],
+    "redes":           ["fortigate", "switch", "router", "ap"],
+    "almacenamiento":  ["nas"],
+    "backup":          ["veeam"],
+}
+
+# category → device_type ("_all" para categorías planas) → list[{key, label}]
 REVIEW_ITEMS: dict[str, dict[str, list[dict[str, str]]]] = {
     "hardware": {
-        "windows_server": [
-            {"key": "event_viewer",  "label": "Event Viewer > Errores críticos"},
-            {"key": "memory_usage",  "label": "Uso de memoria RAM"},
-            {"key": "disk_health",   "label": "Estado discos / SMART"},
-            {"key": "cpu_temp",      "label": "Temperatura CPU"},
-            {"key": "fans_psu",      "label": "Ventiladores y fuentes alimentación"},
-        ],
-        "linux": [
-            {"key": "system_logs",   "label": "Logs del sistema (journalctl)"},
-            {"key": "memory_usage",  "label": "Uso de memoria"},
-            {"key": "disk_health",   "label": "Estado discos"},
-        ],
-        "ilo": [
-            {"key": "health_summary","label": "iLO Health Summary"},
-            {"key": "system_health", "label": "System Health > Overview"},
-            {"key": "fans",          "label": "Fans Status"},
-            {"key": "power_supply",  "label": "Power Supply Status"},
-            {"key": "temp_sensors",  "label": "Temperature Sensors"},
-            {"key": "firmware",      "label": "Firmware actualizado"},
-        ],
-        "idrac": [
-            {"key": "system_health", "label": "System Health Overview"},
-            {"key": "storage_health","label": "Storage > Controllers"},
-            {"key": "power_supply",  "label": "Power Supply"},
-            {"key": "firmware",      "label": "Firmware actualizado"},
+        "_all": [
+            {"key": "estado_general",   "label": "Estado general"},
+            {"key": "firmware",         "label": "Actualización de firmware"},
+            {"key": "windows_updates",  "label": "Actualizaciones pendientes de Windows"},
         ],
     },
     "vm": {
-        "vcenter": [
-            {"key": "cluster_health","label": "Cluster > Health Status"},
-            {"key": "alarms",        "label": "Alarms & Events activos"},
-            {"key": "ha_drs",        "label": "HA / DRS Status"},
-            {"key": "snapshots",     "label": "Snapshots > 7 días pendientes"},
-            {"key": "datastore_usage","label": "Datastore Usage"},
-            {"key": "vcsa_backup",   "label": "VCSA Backup reciente"},
-        ],
-        "esxi": [
-            {"key": "host_status",   "label": "Host > Summary > Status"},
-            {"key": "datastore_usage","label": "Datastores > Usage"},
-            {"key": "vm_status",     "label": "Virtual Machines > States"},
-            {"key": "hw_health",     "label": "Hardware Health Sensors"},
-            {"key": "system_logs",   "label": "System Logs > vmkernel"},
-        ],
-        "vmware_appliance": [
-            {"key": "service_status","label": "Services Status"},
-            {"key": "disk_usage",    "label": "Disk Usage"},
+        "_all": [
+            {"key": "estado_servidor",   "label": "Estado general del servidor (RAM, espacio en disco, CPU)"},
+            {"key": "revision_panel",    "label": "Revisión del server panel"},
+            {"key": "antivirus",         "label": "Estado del antivirus"},
+            {"key": "alertas",           "label": "Alertas"},
+            {"key": "actualizaciones",   "label": "Actualizaciones"},
         ],
     },
     "redes": {
-        "fortigate": [
-            {"key": "dashboard_status",     "label": "Dashboard > Status"},
-            {"key": "firmware",             "label": "Firmware actualizado"},
-            {"key": "forward_traffic_deny", "label": "Forward Traffic Deny"},
-            {"key": "vpn_tunnels",          "label": "VPN Tunnels Status"},
-            {"key": "ha_status",            "label": "HA Status (si aplica)"},
-            {"key": "system_resources",     "label": "Dashboard > Resources"},
-        ],
-        "switch": [
-            {"key": "diagnostics_logging", "label": "Diagnostics > Logging"},
-            {"key": "system_resources",    "label": "Dashboard > System Resources"},
-            {"key": "port_errors",         "label": "Port Error Counters"},
-            {"key": "firmware",            "label": "Firmware actualizado"},
-        ],
-        "router": [
-            {"key": "interface_status", "label": "Interface Status"},
-            {"key": "routing_table",    "label": "Routing Table"},
-            {"key": "firmware",         "label": "Firmware actualizado"},
+        "_all": [
+            {"key": "ap_status", "label": "Alertas, logs y estados de APs (si es necesario)"},
+            {"key": "updates",   "label": "Revisar actualizaciones"},
         ],
     },
     "almacenamiento": {
-        "nas": [
-            {"key": "volume_health",  "label": "Volume / Pool Health"},
-            {"key": "disk_health",    "label": "Disk Health > SMART"},
-            {"key": "storage_usage",  "label": "Storage Usage %"},
-            {"key": "snapshots",      "label": "Snapshots actualizados"},
-            {"key": "replication",    "label": "Replication / Sync Status"},
-            {"key": "shares_active",  "label": "Shared Folders activos"},
+        "_all": [
+            {"key": "alertas_errores",  "label": "Alertas y errores"},
+            {"key": "hw_updates",       "label": "Actualizaciones de hardware"},
+            {"key": "mantenimiento_hw", "label": "Mantenimiento y hardware"},
+        ],
+    },
+    "backup": {
+        "_all": [
+            {"key": "jobs",           "label": "Jobs"},
+            {"key": "veeam_updates",  "label": "Actualizaciones de Veeam"},
+            {"key": "license_expiry", "label": "Vencimiento de licencia"},
         ],
     },
     "vm_idecnet": {
@@ -116,16 +89,6 @@ REVIEW_ITEMS: dict[str, dict[str, list[dict[str, str]]]] = {
             {"key": "replication",   "label": "Replicación Idecnet"},
         ],
     },
-    "backup": {
-        "veeam": [
-            {"key": "job_status",       "label": "Últimos Jobs > Status"},
-            {"key": "last_backup",      "label": "Último backup completado"},
-            {"key": "retention_policy", "label": "Retention Policy correcta"},
-            {"key": "repo_space",       "label": "Espacio en repositorio"},
-            {"key": "restore_test",     "label": "Test de restore reciente"},
-            {"key": "immutable",        "label": "Backup inmutable activo"},
-        ],
-    },
     "antivirus": {
         "windows_server": [
             {"key": "av_active",    "label": "Antivirus activo y protegiendo"},
@@ -148,7 +111,10 @@ REVIEW_ITEMS: dict[str, dict[str, list[dict[str, str]]]] = {
 
 
 def get_items_for_device(device_type: str, category: str) -> list[dict[str, str]]:
-    return REVIEW_ITEMS.get(category, {}).get(device_type, [])
+    cat_map = REVIEW_ITEMS.get(category, {})
+    if "_all" in cat_map:
+        return cat_map["_all"]
+    return cat_map.get(device_type, [])
 
 
 def get_device_types_for_category(category: str) -> list[str]:

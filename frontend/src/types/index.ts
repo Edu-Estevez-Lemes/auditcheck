@@ -1,3 +1,11 @@
+export type UserRole = 'superadmin' | 'admin' | 'tecnico'
+
+export interface ReportBrandingConfig {
+  header_color: string
+  accent_color: string
+  separator_color: string
+}
+
 export interface User {
   id: number
   username: string
@@ -5,8 +13,22 @@ export interface User {
   full_name: string
   is_active: boolean
   is_admin: boolean
+  role: UserRole
   must_change_password: boolean
+  last_login?: string
   created_at: string
+}
+
+export interface AuditLogEntry {
+  id: number
+  user_id: number | null
+  user_email: string | null
+  action: string
+  target_type: string | null
+  target_id: string | null
+  details: string | null
+  ip_address: string | null
+  timestamp: string
 }
 
 export interface Token {
@@ -183,6 +205,9 @@ export interface ReviewHostConfig {
   categorias: string[]
 }
 
+export type RemovedItemsMap = Record<string, Record<string, string[]>>
+export type CustomItemsMap = Record<string, Record<string, { key: string; label: string }[]>>
+
 export interface ReviewConfig {
   id: number
   client_id: number
@@ -190,8 +215,52 @@ export interface ReviewConfig {
   configurado_por: string
   fecha_configuracion: string
   hosts: ReviewHostConfig[]
+  template_id: number | null
+  removed_items: RemovedItemsMap
+  custom_items: CustomItemsMap
   created_at: string
   updated_at: string
+}
+
+export interface ReviewTemplate {
+  id: number
+  user_id: number
+  name: string
+  description: string | null
+  categories: string[]
+  removed_items: RemovedItemsMap
+  custom_items: CustomItemsMap
+  created_at: string
+  updated_at: string
+}
+
+export interface ReviewTemplateAffectedClient {
+  client_id: number
+  client_name: string
+  up_to_date: boolean
+}
+
+export interface ReviewTemplateDiffEntry {
+  category: string
+  device_type: string
+  added_items: { key: string; label: string }[]
+  removed_items: string[]
+}
+
+export interface ReviewTemplateDiff {
+  client_id: number
+  client_name: string
+  categories_added: string[]
+  categories_removed: string[]
+  entries: ReviewTemplateDiffEntry[]
+  has_changes: boolean
+}
+
+export interface ReviewCategoryUsage {
+  in_use: boolean
+  review_configs: number
+  review_sessions: number
+  review_templates: number
 }
 
 export interface ReviewClientStatus {
@@ -235,16 +304,24 @@ export interface ReviewSession {
 export interface ReviewChecklistItem {
   key: string
   label: string
+  is_custom?: boolean
 }
 
 export interface ReviewCategory {
+  id?: number
   key: string
   label: string
+  order?: number
+  is_system?: boolean
+  created_by?: number | null
+  created_at?: string
+  updated_at?: string
 }
 
 export interface ReviewChecklist {
   categories: ReviewCategory[]
   items: Record<string, Record<string, ReviewChecklistItem[]>>
+  category_device_types: Record<string, string[]>
 }
 
 export interface DashboardStats {
@@ -266,6 +343,30 @@ export interface ScanEvent {
   total?: number
   audit_id?: number
   error?: string
+}
+
+// ── Mapa de Red ────────────────────────────────────────────────────────────
+
+export interface NetworkMapNode {
+  id: string
+  label: string
+  ip?: string
+  hostname?: string
+  type: string
+  risk_level: 'critical' | 'high' | 'medium' | 'low' | 'none'
+  open_ports: number[]
+  findings_count: number
+}
+
+export interface NetworkMapEdge {
+  source: string
+  target: string
+  relation: string
+}
+
+export interface NetworkMapOut {
+  nodes: NetworkMapNode[]
+  edges: NetworkMapEdge[]
 }
 
 export interface ComparisonResult {

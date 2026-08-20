@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Aplicación
     APP_NAME: str = "AUDITCHECK"
-    APP_VERSION: str = "1.4.12"
+    APP_VERSION: str = "2.2.9"
     DEBUG: bool = False
 
     # Seguridad JWT
@@ -18,6 +18,7 @@ class Settings(BaseSettings):
 
     # Base de datos — calculada en model_post_init si está vacío
     DATABASE_URL: str = ""
+    DB_FILE_PATH: Path = Path("auditcheck.db")  # recalculada en model_post_init
 
     # Servidor
     HOST: str = "127.0.0.1"
@@ -36,6 +37,13 @@ class Settings(BaseSettings):
 
     # Frontend (archivos compilados de React)
     FRONTEND_DIR: Path = BASE_DIR / "frontend" / "dist"
+
+    # Bloque 3 — Backup, exportación e importación. Carpetas de usuario
+    # (no del proyecto), calculadas en model_post_init.
+    LOCALAPPDATA_DIR: Path = BASE_DIR / "data"
+    BACKUPS_DIR: Path = BASE_DIR / "data" / "backups"
+    EXPORTS_DIR: Path = BASE_DIR / "data" / "exports"
+    LOGS_DIR: Path = BASE_DIR / "data" / "logs"
 
     # Escáner
     SCAN_TIMEOUT: float = 2.0
@@ -69,11 +77,21 @@ class Settings(BaseSettings):
         if frontend_override:
             object.__setattr__(self, "FRONTEND_DIR", Path(frontend_override).resolve())
 
+        # Bloque 3 — %LOCALAPPDATA%\AuditCheck\{backups,exports,logs}\
+        localappdata = os.environ.get("LOCALAPPDATA")
+        appdata_base = Path(localappdata) / "AuditCheck" if localappdata else self.DATA_DIR
+        object.__setattr__(self, "LOCALAPPDATA_DIR", appdata_base)
+        object.__setattr__(self, "BACKUPS_DIR", appdata_base / "backups")
+        object.__setattr__(self, "EXPORTS_DIR", appdata_base / "exports")
+        object.__setattr__(self, "LOGS_DIR", appdata_base / "logs")
+
         # Si hay override de rutas, la DATABASE_URL siempre apunta a la ruta absoluta
         # (ignora cualquier valor relativo que pudiera venir del .env)
         if not self.DATABASE_URL or base_override:
             db_path = self.DATA_DIR / "auditcheck.db"
             object.__setattr__(self, "DATABASE_URL", f"sqlite:///{db_path}")
+
+        object.__setattr__(self, "DB_FILE_PATH", Path(self.DATABASE_URL.removeprefix("sqlite:///")))
 
 
 @lru_cache()

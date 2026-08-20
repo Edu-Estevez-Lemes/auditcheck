@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Crea la distribución portable de AUDITCHECK.
@@ -20,17 +20,28 @@
     .\build_dist.ps1 -Version "1.2.0" -SkipFrontend
 #>
 param(
-    [string]$Version       = "1.1.0",
+    [string]$Version       = "",       # auto-detectado de config.py si no se indica
     [string]$PythonVersion = "3.11.9",
     [switch]$SkipFrontend,       # omitir npm build (usar dist/ ya existente)
     [switch]$SkipDownload,       # omitir descarga de Python (usar caché)
     [switch]$KeepBuildDir        # no eliminar la carpeta dist\ al final
 )
 
+# Auto-detectar versión desde backend/app/config.py si no se indicó
+if (-not $Version) {
+    $configFile = Join-Path $PSScriptRoot "backend\app\config.py"
+    if (Test-Path $configFile) {
+        $match = Select-String -Path $configFile -Pattern 'APP_VERSION\s*:\s*str\s*=\s*"([^"]+)"'
+        if ($match) { $Version = $match.Matches[0].Groups[1].Value }
+    }
+    if (-not $Version) { $Version = "1.0.0" }
+    Write-Host "  Versión detectada desde config.py: $Version" -ForegroundColor Cyan
+}
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# ── Rutas ────────────────────────────────────────────────────────────────────
+# -- Rutas --------------------------------------------------------------------
 $ROOT        = $PSScriptRoot
 $DIST_NAME   = "AUDITCHECK_v$Version"
 $DIST_DIR    = Join-Path $ROOT "dist\$DIST_NAME"
@@ -41,14 +52,14 @@ $PY_URL      = "https://www.python.org/ftp/python/$PythonVersion/python-${Python
 $GETPIP_URL  = "https://bootstrap.pypa.io/get-pip.py"
 $GETPIP_CACHE= Join-Path $CACHE_DIR "get-pip.py"
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
 function Write-Step([int]$N, [int]$Total, [string]$Msg) {
     Write-Host ""
     Write-Host "  [$N/$Total] $Msg" -ForegroundColor Cyan
 }
 
-function Write-OK([string]$Msg)   { Write-Host "      OK — $Msg" -ForegroundColor Green }
-function Write-Info([string]$Msg) { Write-Host "      · $Msg"   -ForegroundColor Gray  }
+function Write-OK([string]$Msg)   { Write-Host "      OK - $Msg" -ForegroundColor Green }
+function Write-Info([string]$Msg) { Write-Host "      * $Msg"   -ForegroundColor Gray  }
 function Write-Warn([string]$Msg) { Write-Host "      ! $Msg"   -ForegroundColor Yellow }
 
 function Test-Cmd([string]$Name) {
@@ -60,14 +71,14 @@ function Get-FileSize([string]$Path) {
     return "$([math]::Round($mb, 1)) MB"
 }
 
-# ── Banner ───────────────────────────────────────────────────────────────────
+# -- Banner -------------------------------------------------------------------
 Write-Host ""
-Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "  ║  AUDITCHECK — Build Distribución Portable        ║" -ForegroundColor Green
-Write-Host "  ║  Versión: $Version   Python: $PythonVersion               ║" -ForegroundColor Green
-Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Green
+Write-Host "  +==================================================+" -ForegroundColor Green
+Write-Host "  |  AUDITCHECK - Build Distribucion Portable        |" -ForegroundColor Green
+Write-Host "  |  Version: $Version   Python: $PythonVersion               |" -ForegroundColor Green
+Write-Host "  +==================================================+" -ForegroundColor Green
 
-# ── Paso 0: Prerequisitos ─────────────────────────────────────────────────────
+# -- Paso 0: Prerequisitos -----------------------------------------------------
 Write-Step 0 7 "Verificando prerequisitos..."
 
 if (-not (Test-Cmd "node") -and -not $SkipFrontend) {
@@ -89,11 +100,11 @@ if (-not $SkipFrontend) {
 Write-Info "Python (venv): $(& $VENV_PYTHON --version)"
 Write-OK "Prerequisitos OK"
 
-# ── Paso 1: Frontend React ────────────────────────────────────────────────────
+# -- Paso 1: Frontend React ----------------------------------------------------
 Write-Step 1 7 "Compilando frontend React..."
 
 if ($SkipFrontend) {
-    Write-Warn "SkipFrontend activo — usando dist/ existente"
+    Write-Warn "SkipFrontend activo - usando dist/ existente"
 } else {
     Push-Location (Join-Path $ROOT "frontend")
     try {
@@ -113,7 +124,7 @@ if (-not (Test-Path $frontendDist)) {
 $frontendFiles = (Get-ChildItem $frontendDist -Recurse -File).Count
 Write-OK "Frontend compilado ($frontendFiles archivos)"
 
-# ── Paso 2: Preparar directorio de distribución ───────────────────────────────
+# -- Paso 2: Preparar directorio de distribución -------------------------------
 Write-Step 2 7 "Preparando directorio de distribución..."
 
 New-Item -Path (Join-Path $ROOT "dist") -ItemType Directory -Force | Out-Null
@@ -127,7 +138,7 @@ New-Item -ItemType Directory -Path "$DIST_DIR\data"             -Force | Out-Nul
 New-Item -ItemType Directory -Path "$DIST_DIR\assets\branding"  -Force | Out-Null
 Write-OK "Directorio $DIST_NAME\ listo"
 
-# ── Paso 3: Python embebido ───────────────────────────────────────────────────
+# -- Paso 3: Python embebido ---------------------------------------------------
 Write-Step 3 7 "Configurando Python $PythonVersion embebido..."
 
 # Descargar Python embeddable (con caché)
@@ -170,7 +181,7 @@ Write-Info "Instalando pip en Python embebido..."
 
 Write-OK "Python $PythonVersion embebido configurado"
 
-# ── Paso 4: Instalar dependencias ─────────────────────────────────────────────
+# -- Paso 4: Instalar dependencias ---------------------------------------------
 Write-Step 4 7 "Instalando dependencias Python (puede tardar unos minutos)..."
 
 $REQ_FILE = Join-Path $ROOT "backend\requirements.txt"
@@ -183,7 +194,7 @@ Write-Info "pip install -r requirements.txt ..."
 $pkgCount = (Get-ChildItem "$PY_DIR\Lib\site-packages" -Directory).Count
 Write-OK "$pkgCount paquetes instalados en Lib\site-packages\"
 
-# ── Paso 5: Copiar código fuente y assets ─────────────────────────────────────
+# -- Paso 5: Copiar código fuente y assets -------------------------------------
 Write-Step 5 7 "Copiando código fuente y assets..."
 
 # Backend Python
@@ -195,7 +206,7 @@ $backendSrc = Join-Path $ROOT "backend\app"
 Copy-Item -Recurse -Path $backendSrc -Destination "$appDir\backend\app"
 
 # Recrear paquete __init__ para que sea importable como backend.app
-@"" | Set-Content "$appDir\backend\__init__.py" -Encoding UTF8
+"" | Set-Content "$appDir\backend\__init__.py" -Encoding UTF8
 # Copiar requirements y el launcher
 Copy-Item (Join-Path $ROOT "launcher.py") "$DIST_DIR\"
 
@@ -216,10 +227,10 @@ if (Test-Path $envExample) {
 
 Write-OK "Código fuente y assets copiados"
 
-# ── Paso 6: Crear scripts de lanzamiento ──────────────────────────────────────
+# -- Paso 6: Crear scripts de lanzamiento --------------------------------------
 Write-Step 6 7 "Creando scripts de lanzamiento y accesos directos..."
 
-# ── AUDITCHECK.bat — Lanzador principal (sin ventana de consola) ──
+# -- AUDITCHECK.bat - Lanzador principal (sin ventana de consola) --
 $batContent = @'
 @echo off
 cd /d "%~dp0"
@@ -227,7 +238,7 @@ start "" "%~dp0python\python.exe" -W ignore "%~dp0launcher.py"
 '@
 Set-Content -Path "$DIST_DIR\AUDITCHECK.bat" -Value $batContent -Encoding ASCII
 
-# ── AUDITCHECK_consola.bat — Lanzador con consola (debug / primer arranque) ──
+# -- AUDITCHECK_consola.bat - Lanzador con consola (debug / primer arranque) --
 $batDebug = @'
 @echo off
 chcp 65001 >nul
@@ -245,7 +256,7 @@ pause
 '@
 Set-Content -Path "$DIST_DIR\AUDITCHECK_consola.bat" -Value $batDebug -Encoding ASCII
 
-# ── Instalar_accesos.bat — Crea accesos directos sin admin ──
+# -- Instalar_accesos.bat - Crea accesos directos sin admin --
 $batInstall = @'
 @echo off
 chcp 65001 >nul
@@ -282,7 +293,7 @@ pause
 '@
 Set-Content -Path "$DIST_DIR\Instalar_accesos.bat" -Value $batInstall -Encoding ASCII
 
-# ── Desinstalar_accesos.bat ──
+# -- Desinstalar_accesos.bat --
 $batUninstall = @'
 @echo off
 del "%USERPROFILE%\Desktop\AUDITCHECK.lnk" 2>nul
@@ -292,7 +303,7 @@ pause
 '@
 Set-Content -Path "$DIST_DIR\Desinstalar_accesos.bat" -Value $batUninstall -Encoding ASCII
 
-# ── LEEME.txt ──
+# -- LEEME.txt --
 $readme = @"
 AUDITCHECK v$Version
 $(("=" * 40))
@@ -340,14 +351,14 @@ Set-Content -Path "$DIST_DIR\LEEME.txt" -Value $readme -Encoding UTF8
 
 Write-OK "Scripts creados"
 
-# ── Paso 7: Empaquetar ────────────────────────────────────────────────────────
+# -- Paso 7: Empaquetar --------------------------------------------------------
 Write-Step 7 7 "Creando ZIP portable..."
 
 if (Test-Path $ZIP_OUT) { Remove-Item $ZIP_OUT -Force }
 Compress-Archive -Path "$DIST_DIR\*" -DestinationPath $ZIP_OUT
 Write-OK "ZIP: $ZIP_OUT  ($(Get-FileSize $ZIP_OUT))"
 
-# ── NSIS installer (opcional) ─────────────────────────────────────────────────
+# -- NSIS installer (opcional) -------------------------------------------------
 $nsisExe = @(
     "${env:ProgramFiles(x86)}\NSIS\makensis.exe",
     "${env:ProgramFiles}\NSIS\makensis.exe",
@@ -368,16 +379,16 @@ if ($nsisExe -and (Test-Path $nsisScript)) {
     }
 } elseif (-not $nsisExe) {
     Write-Host ""
-    Write-Warn "NSIS no encontrado — solo se generó el ZIP."
+    Write-Warn "NSIS no encontrado - solo se generó el ZIP."
     Write-Info "Para crear un instalador .exe, instala NSIS desde https://nsis.sf.net"
     Write-Info "y vuelve a ejecutar este script."
 }
 
-# ── Resumen ───────────────────────────────────────────────────────────────────
+# -- Resumen -------------------------------------------------------------------
 $folderSize = (Get-ChildItem $DIST_DIR -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB
 
 Write-Host ""
-Write-Host "  ══════════════════════════════════════════════════" -ForegroundColor Green
+Write-Host "  ==================================================" -ForegroundColor Green
 Write-Host "  Build completado correctamente" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Carpeta:   dist\$DIST_NAME\"  -ForegroundColor White
@@ -392,5 +403,5 @@ Write-Host "    1. Copia el ZIP al equipo destino" -ForegroundColor Gray
 Write-Host "    2. Extrae en cualquier carpeta (ej: C:\AuditCheck\)" -ForegroundColor Gray
 Write-Host "    3. Ejecuta Instalar_accesos.bat (una vez)" -ForegroundColor Gray
 Write-Host "    4. Doble clic en AUDITCHECK.bat para iniciar" -ForegroundColor Gray
-Write-Host "  ══════════════════════════════════════════════════" -ForegroundColor Green
+Write-Host "  ==================================================" -ForegroundColor Green
 Write-Host ""

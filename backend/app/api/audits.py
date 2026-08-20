@@ -10,7 +10,10 @@ from ..schemas.credential import CredentialOut
 from ..schemas.finding import FindingCreate, FindingUpdate, FindingOut
 from ..services.audit import list_audits, create_audit, get_audit, update_audit, delete_audit
 from ..services.comparison import compare_audits
-from ..services.auth import get_current_user
+from ..schemas.network_map import NetworkMapOut
+from ..services.network_map import build_network_map
+from pydantic import BaseModel
+from ..services.auth import get_current_user, get_admin_user
 from ..models.audit import Audit
 from ..models.device import Device, Port, DeviceKnowledge
 from ..models.credential import Credential
@@ -20,6 +23,10 @@ from ..reports.excel import generate_excel_report, generate_comparison_excel_rep
 from ..config import settings
 
 router = APIRouter(prefix="/audits", tags=["Auditorías"])
+
+
+class _BatchDeleteBody(BaseModel):
+    ids: list[int]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -98,8 +105,16 @@ def update(audit_id: int, data: AuditUpdate, db: Session = Depends(get_db), _: U
     return update_audit(db, audit_id, data)
 
 
+@router.delete("/batch", status_code=204)
+def batch_delete(body: _BatchDeleteBody, db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
+    audits_to_delete = db.query(Audit).filter(Audit.id.in_(body.ids)).all()
+    for audit in audits_to_delete:
+        db.delete(audit)
+    db.commit()
+
+
 @router.delete("/{audit_id}", status_code=204)
-def delete(audit_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def delete(audit_id: int, db: Session = Depends(get_db), _: User = Depends(get_admin_user)):
     delete_audit(db, audit_id)
 
 
@@ -343,6 +358,16 @@ def get_rdp_launch(
         media_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="RDP_{label}.ps1"'},
     )
+
+
+# ── Mapa de Red ────────────────────────────────────────────────────────────────
+
+@router.get("/{audit_id}/network-map", response_model=NetworkMapOut)
+def get_network_map(audit_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    audit = db.query(Audit).filter(Audit.id == audit_id).first()
+    if not audit:
+        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    return build_network_map(db, audit_id)
 
 
 # ── Hallazgos ──────────────────────────────────────────────────────────────────

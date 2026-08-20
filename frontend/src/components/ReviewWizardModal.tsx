@@ -2,12 +2,20 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   X, ChevronLeft, ChevronRight, Save, Download, FileText,
   CheckCircle2, AlertTriangle, XCircle, ClipboardList, Loader2, Info,
+  Zap, Monitor, Globe, Terminal, Trash2, Plus, BookmarkPlus, Sparkles,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { auditsApi, reviewsApi, clientsApi } from '../lib/api'
+import { auditsApi, reviewsApi, clientsApi, rdpApi, accessApi, reviewTemplatesApi } from '../lib/api'
 import { useAuthStore } from '../store/authStore'
-import type { Device, ReviewChecklist, ReviewItemStatus, ReviewResultsData, ReviewConfig } from '../types'
+import type {
+  Device, ReviewChecklist, ReviewChecklistItem, ReviewItemStatus, ReviewResultsData, ReviewConfig,
+  ReviewTemplate, RemovedItemsMap, CustomItemsMap,
+} from '../types'
 import type { ReviewConfigMode } from './ReviewPreDialog'
+import { WebCredentialPanel } from './WebCredentialPanel'
+import type { WebCredData } from './WebCredentialPanel'
+import { AddChecklistItemDialog } from './AddChecklistItemDialog'
+import { SaveTemplateDialog } from './SaveTemplateDialog'
 import { DEVICE_TYPE_LABELS } from '../lib/utils'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -20,6 +28,7 @@ interface ReviewWizardModalProps {
   clientName?: string
   reviewConfig?: ReviewConfig | null
   configMode?: ReviewConfigMode
+  appliedTemplate?: ReviewTemplate | null
 }
 
 // deviceCategories: Record<deviceId string, string[]>
@@ -30,7 +39,12 @@ interface WizardState {
   categories: string[]
   deviceCategories: Record<string, string[]>
   results: ReviewResultsData
+  removedItems: RemovedItemsMap
+  customItems: CustomItemsMap
+  appliedTemplateId: number | null
 }
+
+const EMPTY_STATE_EXTRAS = { removedItems: {} as RemovedItemsMap, customItems: {} as CustomItemsMap, appliedTemplateId: null as number | null }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -53,6 +67,90 @@ const STATUS_LABEL: Record<string, string> = {
 
 const PRIORITY: Record<string, number> = { critical: 3, warning: 2, ok: 1, '': 0 }
 
+// ─── Access Buttons ───────────────────────────────────────────────────────────
+
+interface AccessBtn {
+  type: 'rdp' | 'web' | 'ssh'
+  label: string
+  title: string
+  icon: React.ElementType
+  style: string
+  webUrl?: string
+  credentialName?: string
+  credential_id?: number
+}
+
+function getDeviceWebEntries(d: Device): { url: string; label: string }[] {
+  const ports = d.ports.map(p => p.port_number)
+  const ip = d.ip_address
+  const byType: Record<string, { url: string; label: string }> = {
+    esxi:      { url: `https://${ip}/ui`, label: 'ESXi' },
+    vcenter:   { url: `https://${ip}/ui`, label: 'vCenter' },
+    fortigate: { url: `https://${ip}`,    label: 'FortiGate' },
+    ilo:       { url: `https://${ip}`,    label: 'iLO' },
+    idrac:     { url: `https://${ip}`,    label: 'iDRAC' },
+    printer:   { url: `http://${ip}`,     label: 'Web' },
+  }
+  if (byType[d.device_type]) return [byType[d.device_type]]
+  const entries: { url: string; label: string }[] = []
+  if (ports.includes(443))       entries.push({ url: `https://${ip}`,      label: 'HTTPS' })
+  else if (ports.includes(8443)) entries.push({ url: `https://${ip}:8443`, label: 'HTTPS' })
+  else if (ports.includes(4443)) entries.push({ url: `https://${ip}:4443`, label: 'HTTPS' })
+  if (ports.includes(80))        entries.push({ url: `http://${ip}`,       label: 'HTTP' })
+  else if (ports.includes(8080)) entries.push({ url: `http://${ip}:8080`,  label: 'HTTP' })
+  return entries
+}
+
+function buildAccessButtons(device: Device): AccessBtn[] {
+  const ports = device.ports.map(p => p.port_number)
+  const btns: AccessBtn[] = []
+  const hasCred = !!device.credential_name
+
+  const hasRdp = ports.includes(3389) || ['windows_server', 'windows_workstation'].includes(device.device_type)
+  if (hasRdp) {
+    btns.push({
+      type: 'rdp',
+      label: hasCred ? '⚡ RDP' : 'RDP',
+      title: hasCred
+        ? `Abrir RDP con credenciales automáticas (${device.credential_name})`
+        : `Descargar archivo RDP → ${device.ip_address}`,
+      icon: hasCred ? Zap : Monitor,
+      style: hasCred
+        ? 'bg-green-500/15 text-green-400 hover:bg-green-500/25'
+        : 'bg-blue-500/15 text-blue-400 hover:bg-blue-500/25',
+    })
+  }
+
+  for (const entry of getDeviceWebEntries(device)) {
+    btns.push({
+      type: 'web',
+      label: hasCred ? `⚡ ${entry.label}` : entry.label,
+      title: hasCred
+        ? `${entry.url} · Credencial: ${device.credential_name}`
+        : entry.url,
+      icon: Globe,
+      style: hasCred
+        ? 'bg-green-500/15 text-green-400 hover:bg-green-500/25'
+        : 'bg-blue-500/15 text-blue-400 hover:bg-blue-500/25',
+      webUrl: entry.url,
+      credentialName: device.credential_name || undefined,
+      credential_id: device.credential_id || undefined,
+    })
+  }
+
+  if (ports.includes(22)) {
+    btns.push({
+      type: 'ssh',
+      label: 'SSH',
+      title: `Copiar: ssh ${device.ip_address}`,
+      icon: Terminal,
+      style: 'bg-purple-500/15 text-purple-400 hover:bg-purple-500/25',
+    })
+  }
+
+  return btns
+}
+
 function worstStatus(results: ReviewResultsData, deviceId: number, categories: string[]): ReviewItemStatus {
   let worst: ReviewItemStatus = ''
   const devRes = results[String(deviceId)] ?? {}
@@ -66,10 +164,58 @@ function worstStatus(results: ReviewResultsData, deviceId: number, categories: s
 
 const TODAY = new Date().toISOString().split('T')[0]
 
-/** Returns the category keys that have defined items for a device type */
+/** Ítems definidos para una categoría + tipo de dispositivo. Las categorías
+ *  "planas" devuelven sus ítems bajo la clave "_all" (válidos para cualquier
+ *  device_type); el resto sigue desglosado por device_type. */
+function itemsFor(checklist: ReviewChecklist | null, cat: string, deviceType: string): ReviewChecklistItem[] {
+  const catMap = checklist?.items[cat]
+  if (!catMap) return []
+  return catMap['_all'] ?? catMap[deviceType] ?? []
+}
+
+/** Clave (device_type) bajo la que se guardan las personalizaciones (removed/custom
+ *  items) de una categoría — debe coincidir con la resolución de itemsFor: "_all"
+ *  si la categoría es plana, o el device_type concreto en el resto de casos. */
+function resolveTypeKey(checklist: ReviewChecklist | null, cat: string, deviceType: string): string {
+  const catMap = checklist?.items[cat]
+  if (catMap && '_all' in catMap) return '_all'
+  return deviceType
+}
+
+/** Ítems efectivos para cat/deviceType: catálogo base menos los eliminados por
+ *  el usuario, más los personalizados añadidos (marcados con is_custom). */
+function effectiveItemsFor(
+  checklist: ReviewChecklist | null, cat: string, deviceType: string,
+  removedItems: RemovedItemsMap, customItems: CustomItemsMap,
+): ReviewChecklistItem[] {
+  const typeKey = resolveTypeKey(checklist, cat, deviceType)
+  const base = itemsFor(checklist, cat, deviceType)
+  const removed = new Set(removedItems[cat]?.[typeKey] ?? [])
+  const effective: ReviewChecklistItem[] = base
+    .filter(i => !removed.has(i.key))
+    .map(i => ({ ...i, is_custom: false }))
+  const custom = (customItems[cat]?.[typeKey] ?? []).map(i => ({ ...i, is_custom: true }))
+  return [...effective, ...custom]
+}
+
+/** ¿Es "cat" relevante para "deviceType"? Para categorías planas (hardware, vm,
+ *  redes, almacenamiento, backup) sus ítems son genéricos ("_all") y no sirven
+ *  para decidir esto, así que se usa la lista explícita category_device_types
+ *  (p.ej. un Fortigate solo sugiere "redes", un iLO solo "hardware"). El resto
+ *  de categorías (vm_idecnet, antivirus) siguen desglosadas por device_type,
+ *  así que basta con comprobar si hay ítems definidos para ese tipo. */
+function categoryAppliesToDeviceType(checklist: ReviewChecklist | null, cat: string, deviceType: string): boolean {
+  if (!checklist) return true
+  const deviceTypes = checklist.category_device_types[cat]
+  if (deviceTypes) return deviceTypes.includes(deviceType)
+  return itemsFor(checklist, cat, deviceType).length > 0
+}
+
+/** Returns the category keys relevant for a device type (para marcar las
+ *  casillas correctas al añadir un dispositivo o activar una categoría) */
 function autoDetectCats(deviceType: string, categories: string[], checklist: ReviewChecklist | null): string[] {
   if (!checklist) return categories
-  const matched = categories.filter(cat => (checklist.items[cat]?.[deviceType]?.length ?? 0) > 0)
+  const matched = categories.filter(cat => categoryAppliesToDeviceType(checklist, cat, deviceType))
   return matched.length > 0 ? matched : categories
 }
 
@@ -77,7 +223,7 @@ function autoDetectCats(deviceType: string, categories: string[], checklist: Rev
 
 export function ReviewWizardModal({
   open, onClose, auditId, clientId, clientName,
-  reviewConfig = null, configMode = 'reset',
+  reviewConfig = null, configMode = 'reset', appliedTemplate = null,
 }: ReviewWizardModalProps) {
   const user = useAuthStore((s) => s.user)
 
@@ -91,6 +237,11 @@ export function ReviewWizardModal({
   const [resolvedClientName, setResolvedClientName] = useState(clientName ?? '')
   const [infraWarnings, setInfraWarnings] = useState<{ removed: string[]; added: string[] }>({ removed: [], added: [] })
   const [configSaved, setConfigSaved] = useState(false)
+  const [addItemDialog, setAddItemDialog] = useState<{ open: boolean; catKey: string; deviceType: string }>({ open: false, catKey: '', deviceType: '' })
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false)
+  const [webPanel, setWebPanel] = useState<{
+    open: boolean; loading: boolean; url: string; deviceLabel: string; data: WebCredData | null
+  }>({ open: false, loading: false, url: '', deviceLabel: '', data: null })
 
   const [state, setState] = useState<WizardState>({
     technician: user?.full_name ?? user?.username ?? '',
@@ -99,12 +250,12 @@ export function ReviewWizardModal({
     categories: [],
     deviceCategories: {},
     results: {},
+    ...EMPTY_STATE_EXTRAS,
   })
 
   useEffect(() => {
     if (!open) return
-    const startStep = (reviewConfig && configMode === 'use') ? 1 : 0
-    setStep(startStep)
+    setStep(0)
     setReviewId(null)
     setConfigSaved(false)
     setInfraWarnings({ removed: [], added: [] })
@@ -115,6 +266,7 @@ export function ReviewWizardModal({
       categories: [],
       deviceCategories: {},
       results: {},
+      ...EMPTY_STATE_EXTRAS,
     })
 
     setLoading(true)
@@ -131,7 +283,17 @@ export function ReviewWizardModal({
         setResolvedClientName((clientRes as { name: string }).name)
       }
 
-      if (reviewConfig && configMode !== 'reset') {
+      if (configMode === 'template' && appliedTemplate) {
+        // Pre-populate categories + personalización desde la plantilla elegida.
+        // Los hosts/dispositivos se asignan manualmente (no forman parte de la plantilla).
+        setState(prev => ({
+          ...prev,
+          categories: appliedTemplate.categories,
+          removedItems: appliedTemplate.removed_items,
+          customItems: appliedTemplate.custom_items,
+          appliedTemplateId: appliedTemplate.id,
+        }))
+      } else if (reviewConfig && configMode !== 'reset') {
         // Pre-populate from saved ReviewConfig (match by IP)
         const allCats = Array.from(new Set(reviewConfig.hosts.flatMap(h => h.categorias)))
         const selectedIds = new Set<number>()
@@ -162,11 +324,14 @@ export function ReviewWizardModal({
           categories: allCats,
           selectedDeviceIds: selectedIds,
           deviceCategories: devCats,
+          removedItems: reviewConfig.removed_items ?? {},
+          customItems: reviewConfig.custom_items ?? {},
+          appliedTemplateId: reviewConfig.template_id ?? null,
         }))
       }
     }).catch(() => toast.error('Error cargando datos de revisión'))
       .finally(() => setLoading(false))
-  }, [open, auditId, clientId, clientName, user, reviewConfig, configMode])
+  }, [open, auditId, clientId, clientName, user, reviewConfig, configMode, appliedTemplate])
 
   const totalSteps = (state.categories.length || 1) + 2
   const currentLabel = step === 0
@@ -245,14 +410,43 @@ export function ReviewWizardModal({
         const existing = prev.deviceCategories[devId] ?? []
         if (isAdding) {
           const device = devices.find(d => d.id === id)
-          const hasItems = device ? (checklist?.items[key]?.[device.device_type]?.length ?? 0) > 0 : false
-          newDeviceCats[devId] = hasItems ? [...existing, key] : existing
+          const applies = device ? categoryAppliesToDeviceType(checklist, key, device.device_type) : false
+          newDeviceCats[devId] = applies ? [...existing, key] : existing
         } else {
           newDeviceCats[devId] = existing.filter(c => c !== key)
         }
       })
 
       return { ...prev, categories: newCategories, deviceCategories: newDeviceCats }
+    })
+  }
+
+  const removeItem = (catKey: string, typeKey: string, itemKey: string, isCustom: boolean) => {
+    setState(prev => {
+      if (isCustom) {
+        const catCustom = prev.customItems[catKey] ?? {}
+        const list = (catCustom[typeKey] ?? []).filter(i => i.key !== itemKey)
+        return { ...prev, customItems: { ...prev.customItems, [catKey]: { ...catCustom, [typeKey]: list } } }
+      }
+      const catRemoved = prev.removedItems[catKey] ?? {}
+      const list = catRemoved[typeKey] ?? []
+      if (list.includes(itemKey)) return prev
+      return { ...prev, removedItems: { ...prev.removedItems, [catKey]: { ...catRemoved, [typeKey]: [...list, itemKey] } } }
+    })
+  }
+
+  const addCustomItem = (catKey: string, typeKey: string, label: string) => {
+    setState(prev => {
+      const catCustom = prev.customItems[catKey] ?? {}
+      const list = catCustom[typeKey] ?? []
+      const slug = label
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+      const tempKey = `custom_${slug || 'item'}_${Math.random().toString(16).slice(2, 8)}`
+      return { ...prev, customItems: { ...prev.customItems, [catKey]: { ...catCustom, [typeKey]: [...list, { key: tempKey, label }] } } }
     })
   }
 
@@ -290,6 +484,9 @@ export function ReviewWizardModal({
         configurado_por: state.technician.trim() || (user?.full_name ?? user?.username ?? ''),
         fecha_configuracion: state.reviewDate,
         hosts,
+        template_id: state.appliedTemplateId,
+        removed_items: state.removedItems,
+        custom_items: state.customItems,
       })
       setConfigSaved(true)
       toast.success(
@@ -313,6 +510,8 @@ export function ReviewWizardModal({
     try {
       const reviewData = {
         _device_categories: Object.fromEntries(Object.entries(state.deviceCategories)),
+        _removed_items: state.removedItems,
+        _custom_items: state.customItems,
         ...state.results,
       }
       const payload = {
@@ -352,13 +551,12 @@ export function ReviewWizardModal({
       }
     } else if (step <= state.categories.length) {
       const catKey = state.categories[step - 1]
-      const catItems = checklist?.items ?? {}
       let missing = 0
       state.selectedDeviceIds.forEach(deviceId => {
         const devCats = state.deviceCategories[String(deviceId)] ?? []
         if (!devCats.includes(catKey)) return
         const devType = devices.find(d => d.id === deviceId)?.device_type ?? ''
-        const items = catItems[catKey]?.[devType] ?? []
+        const items = effectiveItemsFor(checklist, catKey, devType, state.removedItems, state.customItems)
         for (const item of items) {
           if (!(state.results[String(deviceId)]?.[catKey]?.items?.[item.key])) missing++
         }
@@ -367,8 +565,9 @@ export function ReviewWizardModal({
     }
     const nextStep = step + 1
     setStep(nextStep)
-    // Auto-save config when entering summary (non-reset modes save silently)
-    if (nextStep === totalSteps - 1 && configMode !== 'reset' && !configSaved) {
+    // Auto-save config when entering summary (existing configs save silently;
+    // 'reset'/'template' are treated as a brand-new config and ask for confirmation)
+    if (nextStep === totalSteps - 1 && configMode !== 'reset' && configMode !== 'template' && !configSaved) {
       void saveConfig()
     }
   }
@@ -385,6 +584,8 @@ export function ReviewWizardModal({
       try {
         const reviewData = {
           _device_categories: Object.fromEntries(Object.entries(state.deviceCategories)),
+          _removed_items: state.removedItems,
+          _custom_items: state.customItems,
           ...state.results,
         }
         await reviewsApi.update(id, { review_data: reviewData, is_completed: true })
@@ -433,6 +634,72 @@ export function ReviewWizardModal({
     }
   }
 
+  // ─── Host access ───────────────────────────────────────────────────────────
+
+  async function handleAccessBtn(btn: AccessBtn, device: Device) {
+    if (btn.type === 'rdp') {
+      const hasCred = !!device.credential_name
+      const fileLabel = (device.display_name || device.hostname || device.ip_address)
+        .replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 40)
+      if (hasCred) {
+        try {
+          const { data } = await rdpApi.launch(auditId, device.id)
+          toast.success((data as { message?: string }).message || `Conectando a ${device.ip_address}...`)
+        } catch (err: unknown) {
+          const status = (err as { response?: { status?: number } })?.response?.status
+          if (status === 501) {
+            try {
+              const { data } = await auditsApi.launchRdp(auditId, device.id)
+              const blob = new Blob([data])
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url; a.download = `RDP_${fileLabel}.ps1`; a.click()
+              URL.revokeObjectURL(url)
+              toast.success('Script RDP descargado → ejecútalo con PowerShell para conectar', { duration: 8000 })
+            } catch { toast.error('Error al generar el script RDP') }
+          } else {
+            const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+            toast.error(detail || 'Error al lanzar RDP')
+          }
+        }
+      } else {
+        try {
+          const { data } = await auditsApi.downloadRdp(auditId, device.id)
+          const blob = new Blob([data], { type: 'application/x-rdp' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url; a.download = `${fileLabel}.rdp`; a.click()
+          URL.revokeObjectURL(url)
+          toast.success(`Archivo .rdp descargado → ábrelo para conectar a ${device.ip_address}`)
+        } catch { toast.error('Error al generar el archivo RDP') }
+      }
+      return
+    }
+
+    if (btn.type === 'web') {
+      const url = btn.webUrl
+      if (!url) return
+      window.open(url, '_blank', 'noopener,noreferrer,popup=yes,width=1366,height=850,menubar=no,toolbar=no,location=no,status=no')
+      if (btn.credentialName && device.credential_id) {
+        const label = device.display_name || device.hostname || device.ip_address
+        setWebPanel({ open: true, loading: true, url, deviceLabel: label, data: null })
+        try {
+          const { data } = await accessApi.getWebCredentials(auditId, device.id)
+          setWebPanel(prev => ({ ...prev, loading: false, data: data as WebCredData }))
+        } catch {
+          setWebPanel(prev => ({ ...prev, loading: false }))
+          toast.error('No se pudieron cargar las credenciales')
+        }
+      }
+      return
+    }
+
+    if (btn.type === 'ssh') {
+      navigator.clipboard.writeText(`ssh ${device.ip_address}`)
+      toast.success(`Copiado: ssh ${device.ip_address}`)
+    }
+  }
+
   // ─── Close guard ──────────────────────────────────────────────────────────
 
   const handleClose = () => {
@@ -447,6 +714,7 @@ export function ReviewWizardModal({
   const progressPct = Math.round((step / Math.max(totalSteps - 1, 1)) * 100)
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={handleClose} />
 
@@ -524,8 +792,13 @@ export function ReviewWizardModal({
               devices={devices}
               checklist={checklist}
               results={state.results}
+              removedItems={state.removedItems}
+              customItems={state.customItems}
               onSetItemStatus={setItemStatus}
               onSetObservations={setObservations}
+              onAccessBtn={handleAccessBtn}
+              onRemoveItem={removeItem}
+              onOpenAddItem={(catKey, deviceType) => setAddItemDialog({ open: true, catKey, deviceType })}
             />
           ) : (
             <StepSummary
@@ -537,6 +810,7 @@ export function ReviewWizardModal({
               configMode={configMode}
               configSaved={configSaved}
               onSaveConfig={saveConfig}
+              onOpenSaveTemplate={() => setSaveTemplateOpen(true)}
             />
           )}
         </div>
@@ -572,6 +846,49 @@ export function ReviewWizardModal({
         </div>
       </div>
     </div>
+
+    <WebCredentialPanel
+      isOpen={webPanel.open}
+      loading={webPanel.loading}
+      url={webPanel.url}
+      deviceLabel={webPanel.deviceLabel}
+      data={webPanel.data}
+      onClose={() => setWebPanel(p => ({ ...p, open: false }))}
+    />
+
+    <AddChecklistItemDialog
+      open={addItemDialog.open}
+      onClose={() => setAddItemDialog(prev => ({ ...prev, open: false }))}
+      categories={checklist?.categories ?? []}
+      defaultCategoryKey={addItemDialog.catKey}
+      onSubmit={(label, categoryKey) => {
+        // Se resuelve la clave de device_type para la categoría elegida en el diálogo
+        // (puede diferir de la actual del paso, p.ej. "_all" si es una categoría plana).
+        const typeKey = resolveTypeKey(checklist, categoryKey, addItemDialog.deviceType)
+        addCustomItem(categoryKey, typeKey, label)
+      }}
+    />
+
+    <SaveTemplateDialog
+      open={saveTemplateOpen}
+      onClose={() => setSaveTemplateOpen(false)}
+      onSubmit={async (name, description) => {
+        try {
+          await reviewTemplatesApi.create({
+            name,
+            description: description || null,
+            categories: state.categories,
+            removed_items: state.removedItems,
+            custom_items: state.customItems,
+          })
+          toast.success('Plantilla guardada')
+          setSaveTemplateOpen(false)
+        } catch {
+          toast.error('Error al guardar la plantilla')
+        }
+      }}
+    />
+    </>
   )
 }
 
@@ -727,7 +1044,7 @@ function StepConfig({ state, devices, checklist, onToggleDevice, onToggleCategor
                     </div>
                     {state.categories.map(catKey => {
                       const included = devCats.includes(catKey)
-                      const hasItems = (checklist?.items[catKey]?.[device.device_type]?.length ?? 0) > 0
+                      const hasItems = itemsFor(checklist, catKey, device.device_type).length > 0
                       return (
                         <div key={catKey} className="flex justify-center">
                           <button
@@ -769,16 +1086,19 @@ interface StepCategoryProps {
   devices: Device[]
   checklist: ReviewChecklist | null
   results: ReviewResultsData
+  removedItems: RemovedItemsMap
+  customItems: CustomItemsMap
   onSetItemStatus: (deviceId: number, catKey: string, itemKey: string, status: ReviewItemStatus) => void
   onSetObservations: (deviceId: number, catKey: string, text: string) => void
+  onAccessBtn: (btn: AccessBtn, device: Device) => void
+  onRemoveItem: (catKey: string, typeKey: string, itemKey: string, isCustom: boolean) => void
+  onOpenAddItem: (catKey: string, deviceType: string) => void
 }
 
 function StepCategory({
   catKey, catLabel, deviceCategories, selectedDeviceIds, devices, checklist, results,
-  onSetItemStatus, onSetObservations,
+  removedItems, customItems, onSetItemStatus, onSetObservations, onAccessBtn, onRemoveItem, onOpenAddItem,
 }: StepCategoryProps) {
-  const catItemsByType = checklist?.items[catKey] ?? {}
-
   // Show only devices assigned to this category
   const relevantDevices = devices.filter(d => {
     if (!selectedDeviceIds.has(d.id)) return false
@@ -801,7 +1121,8 @@ function StepCategory({
       )}
 
       {relevantDevices.map(device => {
-        const items = catItemsByType[device.device_type] ?? []
+        const typeKey = resolveTypeKey(checklist, catKey, device.device_type)
+        const items = effectiveItemsFor(checklist, catKey, device.device_type, removedItems, customItems)
         const devLabel = device.display_name || device.hostname || device.ip_address
         const devResults = results[String(device.id)]?.[catKey]
         const itemStatuses = devResults?.items ?? {}
@@ -815,7 +1136,22 @@ function StepCategory({
                 <span className="text-sm font-semibold text-text-primary">{devLabel}</span>
                 <span className="text-xs text-text-muted ml-2">{device.ip_address}</span>
               </div>
-              <span className="text-xs text-text-muted">
+              {buildAccessButtons(device).length > 0 && (
+                <div className="flex gap-1 shrink-0">
+                  {buildAccessButtons(device).map((btn, i) => (
+                    <button
+                      key={i}
+                      onClick={() => onAccessBtn(btn, device)}
+                      title={btn.title}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors ${btn.style}`}
+                    >
+                      <btn.icon size={11} />
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <span className="text-xs text-text-muted shrink-0">
                 {DEVICE_TYPE_LABELS[device.device_type] ?? device.device_type}
               </span>
             </div>
@@ -824,9 +1160,16 @@ function StepCategory({
               {items.length > 0 ? items.map((item, idx) => {
                 const status = itemStatuses[item.key] ?? ''
                 return (
-                  <div key={item.key} className={`flex items-center gap-3 px-4 py-3 ${idx % 2 === 1 ? 'bg-surface-2/40' : ''}`}>
-                    <span className="text-sm text-text-primary flex-1 min-w-0">{item.label}</span>
-                    <div className="flex gap-1.5 shrink-0">
+                  <div key={item.key} className={`flex items-center gap-3 px-4 py-3 ${idx % 2 === 1 ? 'bg-surface-2/40' : ''} ${item.is_custom ? 'border-l-2 border-l-violet-500' : ''}`}>
+                    <span className="text-sm text-text-primary flex-1 min-w-0 flex items-center gap-2">
+                      <span className="truncate">{item.label}</span>
+                      {item.is_custom && (
+                        <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-500/15 text-violet-400 border border-violet-500/30">
+                          <Sparkles size={9} /> Personalizado
+                        </span>
+                      )}
+                    </span>
+                    <div className="flex gap-1.5 shrink-0 items-center">
                       {(['ok', 'warning', 'critical'] as ReviewItemStatus[]).map(s => {
                         const cfg = STATUS_BTN[s]
                         return (
@@ -839,6 +1182,13 @@ function StepCategory({
                           </button>
                         )
                       })}
+                      <button
+                        onClick={() => onRemoveItem(catKey, typeKey, item.key, !!item.is_custom)}
+                        title="Eliminar ítem de esta revisión"
+                        className="p-1 rounded text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   </div>
                 )
@@ -862,6 +1212,15 @@ function StepCategory({
                   </div>
                 </div>
               )}
+              <div className="px-4 py-2 bg-surface-2/10">
+                <button
+                  onClick={() => onOpenAddItem(catKey, device.device_type)}
+                  title={`Se aplicará a todos los dispositivos de tipo "${DEVICE_TYPE_LABELS[device.device_type] ?? device.device_type}" en esta categoría`}
+                  className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+                >
+                  <Plus size={12} /> Añadir ítem
+                </button>
+              </div>
             </div>
 
             <div className="px-4 py-3 bg-surface-2/20 border-t border-border">
@@ -892,9 +1251,10 @@ interface StepSummaryProps {
   configMode: ReviewConfigMode
   configSaved: boolean
   onSaveConfig: () => Promise<boolean>
+  onOpenSaveTemplate: () => void
 }
 
-function StepSummary({ state, devices, checklist, exporting, onExport, configMode, configSaved, onSaveConfig }: StepSummaryProps) {
+function StepSummary({ state, devices, checklist, exporting, onExport, configMode, configSaved, onSaveConfig, onOpenSaveTemplate }: StepSummaryProps) {
   const [savingConfig, setSavingConfig] = useState(false)
   const selectedDevices = devices.filter(d => state.selectedDeviceIds.has(d.id))
   const catLabels = Object.fromEntries((checklist?.categories ?? []).map(c => [c.key, c.label]))
@@ -966,8 +1326,8 @@ function StepSummary({ state, devices, checklist, exporting, onExport, configMod
         </div>
       </div>
 
-      {/* Guardar configuración — solo en modo reset */}
-      {configMode === 'reset' && !configSaved && (
+      {/* Guardar configuración — solo en modo reset/template (nueva config para el cliente) */}
+      {(configMode === 'reset' || configMode === 'template') && !configSaved && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary/10 border border-primary/30">
           <ClipboardList size={16} className="text-primary shrink-0" />
           <p className="text-sm text-text-primary flex-1">
@@ -983,11 +1343,22 @@ function StepSummary({ state, devices, checklist, exporting, onExport, configMod
           </button>
         </div>
       )}
-      {configMode === 'reset' && configSaved && (
+      {(configMode === 'reset' || configMode === 'template') && configSaved && (
         <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-success/10 border border-success/30 text-success text-sm">
           <CheckCircle2 size={15} /> Configuración guardada para futuras revisiones
         </div>
       )}
+
+      {/* Guardar checklist personalizada como plantilla reutilizable */}
+      <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-surface-2/40 border border-border">
+        <BookmarkPlus size={16} className="text-text-secondary shrink-0" />
+        <p className="text-sm text-text-secondary flex-1">
+          ¿Reutilizar esta checklist (categorías + ítems personalizados) en otros clientes?
+        </p>
+        <button onClick={onOpenSaveTemplate} className="btn-ghost text-xs px-3 py-1.5 shrink-0 border border-border">
+          Guardar como plantilla
+        </button>
+      </div>
 
       <div className="flex gap-3 pt-2">
         <button

@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { authApi } from '../lib/api'
 import { useAuthStore } from '../store/authStore'
 import { Logo } from '../components/Logo'
+import { GradientWaves } from '../components/branding/GradientWaves'
 
 export function Login() {
   const navigate = useNavigate()
@@ -35,11 +36,9 @@ export function Login() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      {/* Background gradient */}
+      {/* Fondo — gradiente animado violeta/azul/marengo + ondas (Bloque 6) */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-primary/8 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[300px] bg-accent/6 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 left-0 w-[300px] h-[200px] bg-primary/4 rounded-full blur-3xl" />
+        <GradientWaves className="w-full h-full" />
       </div>
 
       <div className="w-full max-w-md relative">
@@ -49,7 +48,7 @@ export function Login() {
             <Logo size="lg" showText />
           </div>
           <p className="text-text-secondary text-sm">
-            Plataforma profesional de auditoría técnica
+            AuditCheck - Auditoría IT Exhaustiva para MSPs
           </p>
         </div>
 

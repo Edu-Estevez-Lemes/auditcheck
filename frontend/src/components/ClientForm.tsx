@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
+import { Upload, X } from 'lucide-react'
 import { clientsApi } from '../lib/api'
 import type { Client } from '../types'
 
@@ -22,11 +23,49 @@ export function ClientForm({ initialData, onSuccess, onCancel }: Props) {
     observations: initialData?.observations ?? '',
   })
 
+  // Logo: fichero seleccionado + URL de previsualización
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(
+    isEdit && initialData?.id ? `/api/v1/clients/${initialData.id}/logo` : null
+  )
+
+  const handleLogoChange = (file: File) => {
+    setLogoFile(file)
+    const reader = new FileReader()
+    reader.onload = (e) => setLogoPreview(e.target?.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  const clearLogo = () => {
+    setLogoFile(null)
+    setLogoPreview(isEdit && initialData?.id ? `/api/v1/clients/${initialData.id}/logo` : null)
+  }
+
   const mut = useMutation({
-    mutationFn: () =>
-      isEdit
-        ? clientsApi.update(initialData!.id!, form)
-        : clientsApi.create(form),
+    mutationFn: async () => {
+      if (isEdit) {
+        // Edición: actualizar datos y subir logo si se seleccionó uno
+        await clientsApi.update(initialData!.id!, form)
+        if (logoFile) {
+          try {
+            await clientsApi.uploadLogo(initialData!.id!, logoFile)
+          } catch {
+            toast.error('Datos guardados, pero el logo no se pudo subir')
+          }
+        }
+      } else {
+        // Creación: crear el cliente primero para obtener el ID, luego subir el logo
+        const res = await clientsApi.create(form)
+        const newId = (res.data as Client).id
+        if (logoFile && newId) {
+          try {
+            await clientsApi.uploadLogo(newId, logoFile)
+          } catch {
+            toast.error('Cliente creado, pero el logo no se pudo subir')
+          }
+        }
+      }
+    },
     onSuccess: () => {
       toast.success(isEdit ? 'Cliente actualizado' : 'Cliente creado')
       onSuccess()
@@ -57,6 +96,50 @@ export function ClientForm({ initialData, onSuccess, onCancel }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Logo */}
+      <div className="form-group">
+        <label className="label">Logo del cliente</label>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-24 h-16 bg-surface-2 rounded-lg border-2 border-dashed border-border shrink-0 overflow-hidden">
+            {logoPreview ? (
+              <img
+                src={logoPreview}
+                alt="Logo"
+                className="h-full w-full object-contain p-1"
+                onError={() => setLogoPreview(null)}
+              />
+            ) : (
+              <span className="text-text-muted text-[10px] text-center leading-tight px-1">
+                Sin logo
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="btn-secondary cursor-pointer text-xs">
+              <Upload size={13} />
+              {logoFile ? 'Cambiar logo' : logoPreview ? 'Reemplazar' : 'Subir logo'}
+              <input
+                type="file"
+                className="hidden"
+                accept="image/*"
+                onChange={(e) => e.target.files?.[0] && handleLogoChange(e.target.files[0])}
+              />
+            </label>
+            {logoFile && (
+              <button
+                type="button"
+                className="btn-ghost text-xs text-text-muted hover:text-danger flex items-center gap-1"
+                onClick={clearLogo}
+              >
+                <X size={11} /> Quitar selección
+              </button>
+            )}
+            <p className="text-xs text-text-muted">PNG, JPG, SVG · se sube al guardar</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Campos de datos */}
       <div className="grid grid-cols-2 gap-3">
         {field('Nombre del cliente *', 'name')}
         {field('CIF/NIF', 'cif_nif')}

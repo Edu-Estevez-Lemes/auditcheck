@@ -22,3 +22,6 @@ reportlab>=4.0.0
 # netmiko>=4.4.0
 # pysnmp>=6.1.0
 # pyVmomi>=8.0.0
+
+# Desarrollo / pruebas
+pytest>=8.0.0

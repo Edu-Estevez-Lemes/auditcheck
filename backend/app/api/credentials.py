@@ -38,6 +38,15 @@ def delete(cred_id: int, db: Session = Depends(get_db), _: User = Depends(get_cu
     delete_credential(db, cred_id)
 
 
+@router.get("/{cred_id}/password")
+def get_password(cred_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    cred = get_credential_or_404(db, cred_id)
+    if not cred.encrypted_password:
+        return {"password": None}
+    from ..utils.crypto import decrypt_secret
+    return {"password": decrypt_secret(cred.encrypted_password)}
+
+
 @router.post("/{cred_id}/test")
 def test(
     cred_id: int,

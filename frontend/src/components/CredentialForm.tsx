@@ -4,26 +4,29 @@ import { Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { credentialsApi } from '../lib/api'
 import { CREDENTIAL_TYPES } from '../lib/utils'
+import type { Credential } from '../types'
 
 interface Props {
   clientId?: number
+  initialData?: Credential
   onSuccess: () => void
   onCancel: () => void
 }
 
-export function CredentialForm({ clientId, onSuccess, onCancel }: Props) {
+export function CredentialForm({ clientId, initialData, onSuccess, onCancel }: Props) {
+  const isEdit = !!initialData?.id
   const [showPass, setShowPass] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [form, setForm] = useState({
-    name: '',
-    credential_type: 'windows',
-    username: '',
+    name: initialData?.name ?? '',
+    credential_type: initialData?.credential_type ?? 'windows',
+    username: initialData?.username ?? '',
     password: '',
-    host: '',
-    port: '',
-    domain: '',
-    notes: '',
-    is_preferred: false,
+    host: initialData?.host ?? '',
+    port: initialData?.port != null ? String(initialData.port) : '',
+    domain: initialData?.domain ?? '',
+    notes: initialData?.notes ?? '',
+    is_preferred: initialData?.is_preferred ?? false,
   })
 
   function validate(): boolean {
@@ -35,8 +38,8 @@ export function CredentialForm({ clientId, onSuccess, onCancel }: Props) {
   }
 
   const mut = useMutation({
-    mutationFn: () =>
-      credentialsApi.create({
+    mutationFn: () => {
+      const payload = {
         name: form.name.trim(),
         credential_type: form.credential_type,
         username: form.username.trim() || null,
@@ -46,15 +49,18 @@ export function CredentialForm({ clientId, onSuccess, onCancel }: Props) {
         domain: form.domain.trim() || null,
         notes: form.notes.trim() || null,
         is_preferred: form.is_preferred,
-        client_id: clientId ?? null,
-      }),
+      }
+      return isEdit
+        ? credentialsApi.update(initialData!.id, payload)
+        : credentialsApi.create({ ...payload, client_id: clientId ?? null })
+    },
     onSuccess: () => {
-      toast.success('Credencial guardada — contraseña cifrada')
+      toast.success(isEdit ? 'Credencial actualizada' : 'Credencial guardada — contraseña cifrada')
       onSuccess()
     },
     onError: (err: unknown) => {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(detail || 'Error al guardar la credencial — verifica que el backend está activo')
+      toast.error(detail || 'Error al guardar la credencial')
     },
   })
 
@@ -115,7 +121,7 @@ export function CredentialForm({ clientId, onSuccess, onCancel }: Props) {
             <input
               type={showPass ? 'text' : 'password'}
               className="input pr-10"
-              placeholder="Se cifra al guardar"
+              placeholder={isEdit ? 'Dejar vacío para no cambiar' : 'Se cifra al guardar'}
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
             />
@@ -125,7 +131,7 @@ export function CredentialForm({ clientId, onSuccess, onCancel }: Props) {
             </button>
           </div>
           <p className="text-xs text-text-muted mt-1">
-            La contraseña se cifra con AES-128 antes de guardarse y nunca se expone en texto plano
+            {isEdit ? 'Solo rellena este campo si quieres cambiar la contraseña actual' : 'La contraseña se cifra con AES-128 antes de guardarse'}
           </p>
         </div>
 
@@ -175,7 +181,7 @@ export function CredentialForm({ clientId, onSuccess, onCancel }: Props) {
       <div className="flex gap-3 justify-end pt-2 border-t border-border">
         <button className="btn-secondary" onClick={onCancel} disabled={mut.isPending}>Cancelar</button>
         <button className="btn-primary" onClick={handleSubmit} disabled={mut.isPending}>
-          {mut.isPending ? 'Guardando...' : 'Guardar credencial'}
+          {mut.isPending ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Guardar credencial'}
         </button>
       </div>
     </div>

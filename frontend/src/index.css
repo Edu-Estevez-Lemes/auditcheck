@@ -20,6 +20,10 @@
   --ac-text-primary:    237 233 254;
   --ac-text-secondary:  157 142 196;
   --ac-text-muted:      107 95 138;
+
+  /* Bloque 6 — gradiente de fondo (login + cabecera del logo): #161224 / #0c0914 */
+  --gw-c1: 22 18 36;
+  --gw-c2: 12 9 20;
 }
 
 /* ── Paleta de colores — modo claro ───────────────────────────────────────── */
@@ -132,4 +136,73 @@
   .page-title {
     @apply text-2xl font-bold text-text-primary;
   }
+}
+
+/* ── Bloque 6 — fondo de gradiente animado (GradientWaves) ────────────────── */
+/* Ambas variantes usan los dos colores dados: #161224 / #0c0914. */
+.gw-gradient {
+  background: linear-gradient(135deg, rgb(var(--gw-c1)), rgb(var(--gw-c2)), rgb(var(--gw-c1)));
+  background-size: 300% 300%;
+  animation: gw-shift 26s ease-in-out infinite;
+}
+
+/* Variante de la cabecera del logo: mismos dos colores, orden de arranque distinto. */
+.gw-gradient--sidebar {
+  background: linear-gradient(135deg, rgb(var(--gw-c2)), rgb(var(--gw-c1)), rgb(var(--gw-c2)));
+  background-size: 300% 300%;
+  animation: gw-shift 26s ease-in-out infinite;
+}
+
+/* Tema claro: la cabecera del logo pierde el gradiente y pasa a blanco liso. */
+:root.theme-light .gw-root--sidebar .gw-gradient--sidebar {
+  background: rgb(var(--ac-surface));
+  animation: none;
+}
+:root.theme-light .gw-root--sidebar .gw-wave-a,
+:root.theme-light .gw-root--sidebar .gw-wave-b,
+:root.theme-light .gw-root--sidebar .gw-wave-c,
+:root.theme-light .gw-root--sidebar .gw-wave-d,
+:root.theme-light .gw-root--sidebar .gw-wave-e,
+:root.theme-light .gw-root--sidebar .gw-wave-f,
+:root.theme-light .gw-root--sidebar .gw-wave-g,
+:root.theme-light .gw-root--sidebar .gw-wave-h,
+:root.theme-light .gw-root--sidebar .gw-noise {
+  display: none;
+}
+
+.gw-noise {
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  background-repeat: repeat;
+  background-size: 140px 140px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.gw-wave-a { animation: gw-wave-drift 32s linear infinite; }
+.gw-wave-b { animation: gw-wave-drift-reverse 44s linear infinite; }
+.gw-wave-c { animation: gw-wave-drift 38s linear infinite; }
+.gw-wave-d { animation: gw-wave-drift-reverse 50s linear infinite; }
+.gw-wave-e { animation: gw-wave-drift 26s linear infinite; }
+.gw-wave-f { animation: gw-wave-drift 40s linear infinite; }
+.gw-wave-g { animation: gw-wave-drift-reverse 34s linear infinite; }
+.gw-wave-h { animation: gw-wave-drift 52s linear infinite; }
+
+@keyframes gw-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes gw-wave-drift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+@keyframes gw-wave-drift-reverse {
+  from { transform: translateX(-50%); }
+  to   { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gw-gradient, .gw-wave-a, .gw-wave-b, .gw-wave-c, .gw-wave-d, .gw-wave-e,
+  .gw-wave-f, .gw-wave-g, .gw-wave-h { animation: none; }
 }

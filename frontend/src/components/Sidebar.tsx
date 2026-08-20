@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import { Logo } from './Logo'
+import { GradientWaves } from './branding/GradientWaves'
 import toast from 'react-hot-toast'
 
 const navItems = [
@@ -27,9 +28,12 @@ export function Sidebar() {
 
   return (
     <aside className="w-64 h-screen flex flex-col bg-surface border-r border-border fixed left-0 top-0 z-30">
-      {/* Logo */}
-      <div className="h-32 flex items-center justify-center px-4 border-b border-border">
-        <Logo size="md" showText />
+      {/* Logo — cabecera con fondo de gradiente animado (Bloque 6) */}
+      <div className="relative h-32 flex items-center justify-center px-4 border-b border-border overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none">
+          <GradientWaves className="w-full h-full" palette="sidebar" waveCount={4} />
+        </div>
+        <Logo size="md" showText className="relative" />
       </div>
 
       {/* Nav */}
@@ -61,7 +65,7 @@ export function Sidebar() {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-text-primary truncate">{user?.full_name}</p>
             <p className="text-xs text-text-muted truncate">
-              {user?.is_admin ? 'Administrador' : 'Técnico'}
+              {{ superadmin: 'Superadmin', admin: 'Administrador', tecnico: 'Técnico' }[user?.role ?? 'tecnico']}
             </p>
           </div>
         </div>

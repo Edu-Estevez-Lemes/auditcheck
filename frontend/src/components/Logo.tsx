@@ -55,7 +55,9 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
         />
       ) : (
         <div className="flex items-center gap-2.5">
-          <EggplantMark size={s.icon} />
+          <span className="block leading-none">
+            <EggplantMark size={s.icon} />
+          </span>
           {showText && (
             <span className={`font-bold ${s.text} text-text-primary tracking-tight`}>
               AUDIT<span className="text-primary">CHECK</span>

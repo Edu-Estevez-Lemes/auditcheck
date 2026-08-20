@@ -18,6 +18,9 @@ class ReviewConfigCreate(BaseModel):
     configurado_por: str
     fecha_configuracion: str
     hosts: list[ReviewHostConfig]
+    template_id: int | None = None
+    removed_items: dict[str, dict[str, list[str]]] = {}
+    custom_items: dict[str, dict[str, list[dict[str, Any]]]] = {}
 
 
 class ReviewConfigOut(BaseModel):
@@ -27,6 +30,9 @@ class ReviewConfigOut(BaseModel):
     configurado_por: str
     fecha_configuracion: str
     hosts: list[ReviewHostConfig]
+    template_id: int | None = None
+    removed_items: dict[str, dict[str, list[str]]] = {}
+    custom_items: dict[str, dict[str, list[dict[str, Any]]]] = {}
     created_at: datetime
     updated_at: datetime
 

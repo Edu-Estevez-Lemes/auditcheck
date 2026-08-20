@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Download, Server, AlertTriangle, Network, Shield,
   Copy, Monitor, Globe, Terminal, Pencil, Sparkles, Key, Zap,
-  ChevronUp, ChevronDown, ChevronsUpDown, ClipboardList,
+  ChevronUp, ChevronDown, ChevronsUpDown, ClipboardList, Map, XCircle,
 } from 'lucide-react'
 import { useThemeStore } from '../store/themeStore'
 import toast from 'react-hot-toast'
@@ -13,6 +13,7 @@ import { DeviceEditModal } from '../components/DeviceEditModal'
 import { WebCredentialPanel } from '../components/WebCredentialPanel'
 import { CredentialQuickPanel } from '../components/CredentialQuickPanel'
 import { ReviewWizardModal } from '../components/ReviewWizardModal'
+import { NetworkMap } from '../components/NetworkMap'
 import type { WebCredData } from '../components/WebCredentialPanel'
 import type { Audit, Device, Finding } from '../types'
 import { formatDate, SEVERITY_CONFIG, DEVICE_TYPE_LABELS } from '../lib/utils'
@@ -210,7 +211,8 @@ export function AuditDetail() {
     ? { background: '#1c182a', border: '1px solid #28203e', borderRadius: 8, color: '#ede9fe' }
     : { background: '#ffffff', border: '1px solid #ddd6fe', borderRadius: 8, color: '#1e0b3e' }
 
-  const [tab, setTab] = useState<'devices' | 'findings'>('devices')
+  const [tab, setTab] = useState<'devices' | 'findings' | 'topology'>('devices')
+  const [findingsDeviceFilter, setFindingsDeviceFilter] = useState<number | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [filterSev, setFilterSev] = useState<string>('all')
   const [categoryKey, setCategoryKey] = useState<string>('all')
@@ -345,6 +347,9 @@ export function AuditDetail() {
   }, [filteredDevices, sortField, sortDir])
 
   const filteredFindings = filterSev === 'all' ? findings : findings.filter(f => f.severity === filterSev)
+  const findingsForDisplay = findingsDeviceFilter != null
+    ? filteredFindings.filter(f => f.device_id === findingsDeviceFilter)
+    : filteredFindings
 
   const findingsBySev = findings.reduce<Record<string, number>>(
     (acc, f) => { acc[f.severity] = (acc[f.severity] ?? 0) + 1; return acc }, {}
@@ -552,10 +557,11 @@ export function AuditDetail() {
         {[
           { key: 'devices',  label: `Dispositivos (${audit.total_devices})`, icon: Server },
           { key: 'findings', label: `Hallazgos (${audit.total_findings})`,  icon: AlertTriangle },
+          { key: 'topology', label: 'Mapa de Red', icon: Map },
         ].map(({ key, label, icon: Icon }) => (
           <button
             key={key}
-            onClick={() => setTab(key as 'devices' | 'findings')}
+            onClick={() => setTab(key as 'devices' | 'findings' | 'topology')}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               tab === key ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'
             }`}
@@ -880,6 +886,14 @@ export function AuditDetail() {
       {/* ── TAB HALLAZGOS ──────────────────────────────────────────────────── */}
       {tab === 'findings' && (
         <div className="space-y-3">
+          {findingsDeviceFilter != null && (
+            <div className="flex items-center gap-2 text-xs bg-primary/10 border border-primary/30 text-primary rounded-lg px-3 py-2 w-fit">
+              Filtrando por dispositivo (ID {findingsDeviceFilter})
+              <button onClick={() => setFindingsDeviceFilter(null)} className="flex items-center gap-1 font-semibold hover:underline">
+                <XCircle size={13} /> Quitar filtro
+              </button>
+            </div>
+          )}
           <div className="flex gap-2 flex-wrap">
             {(['all', 'critical', 'high', 'medium', 'low', 'informational'] as const).map(s => (
               <button
@@ -898,10 +912,10 @@ export function AuditDetail() {
           </div>
 
           <div className="space-y-3">
-            {filteredFindings.length === 0 && (
+            {findingsForDisplay.length === 0 && (
               <div className="card text-center py-8 text-text-muted">Sin hallazgos para este filtro</div>
             )}
-            {filteredFindings.map(f => {
+            {findingsForDisplay.map(f => {
               const sevCfg = SEVERITY_CONFIG[f.severity as keyof typeof SEVERITY_CONFIG]
               const sevColor = SEV_COLORS[f.severity as keyof typeof SEV_COLORS]
               return (
@@ -943,6 +957,15 @@ export function AuditDetail() {
             })}
           </div>
         </div>
+      )}
+
+      {/* ── TAB MAPA DE RED ────────────────────────────────────────────────── */}
+      {tab === 'topology' && (
+        <NetworkMap
+          auditId={auditId}
+          auditName={audit.name}
+          onViewFindings={(deviceId) => { setTab('findings'); setFindingsDeviceFilter(deviceId) }}
+        />
       )}
 
       {/* Panel flotante de credenciales web */}
