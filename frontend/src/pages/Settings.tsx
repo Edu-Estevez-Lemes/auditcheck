@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, User, Users, Key, Info, Upload, Shield, History, RotateCcw, Eye, Copy, Lock, ShieldAlert, Database, ListChecks, FileEdit } from 'lucide-react'
+import { Save, User, Users, Key, Info, Upload, Shield, History, RotateCcw, Eye, Copy, Lock, ShieldAlert, Database, ListChecks, FileEdit, Trash2, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { authApi, auditLogApi } from '../lib/api'
 import { useAuthStore } from '../store/authStore'
 import { useVaultStore } from '../store/vaultStore'
 import { Modal } from '../components/Modal'
 import { Logo } from '../components/Logo'
+import { Avatar, AVATAR_PRESETS } from '../components/Avatar'
 import { DatabaseTab } from '../components/database/DatabaseTab'
 import { ChecklistSettingsTab } from '../components/review/ChecklistSettingsTab'
 import { ReportBrandingTab } from '../components/reports/ReportBrandingTab'
@@ -71,9 +72,49 @@ function ProfileTab() {
   const { user, updateUser } = useAuthStore()
   const [form, setForm] = useState({ full_name: user?.full_name ?? '', email: user?.email ?? '' })
   const [saving, setSaving] = useState(false)
+  const [avatarBusy, setAvatarBusy] = useState(false)
 
   const [pwForm, setPwForm] = useState({ current_password: '', new_password: '', confirm_password: '' })
   const [changingPw, setChangingPw] = useState(false)
+
+  const handlePickPreset = async (key: string) => {
+    setAvatarBusy(true)
+    try {
+      const { data } = await authApi.setAvatarPreset(key)
+      updateUser(data)
+    } catch { toast.error('Error al guardar el avatar') }
+    finally { setAvatarBusy(false) }
+  }
+
+  const handleUploadAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('La imagen no puede superar 5 MB')
+      e.target.value = ''
+      return
+    }
+    setAvatarBusy(true)
+    try {
+      const { data } = await authApi.uploadAvatar(file)
+      updateUser(data)
+      toast.success('Avatar actualizado')
+    } catch {
+      toast.error('Error al subir el avatar')
+    } finally {
+      setAvatarBusy(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleRemoveAvatar = async () => {
+    setAvatarBusy(true)
+    try {
+      const { data } = await authApi.deleteAvatar()
+      updateUser(data)
+    } catch { toast.error('Error al quitar el avatar') }
+    finally { setAvatarBusy(false) }
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -110,6 +151,46 @@ function ProfileTab() {
 
   return (
     <div className="space-y-5 max-w-lg">
+      <div className="card space-y-4">
+        <h3 className="section-title">Avatar</h3>
+        <div className="flex items-center gap-4">
+          <Avatar user={user} size={64} />
+          <div className="flex-1 flex flex-wrap items-center gap-2">
+            <label className="btn-secondary cursor-pointer text-xs">
+              <Upload size={13} /> Subir imagen
+              <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden"
+                onChange={handleUploadAvatar} disabled={avatarBusy} />
+            </label>
+            {user?.avatar && (
+              <button className="btn-ghost text-xs flex items-center gap-1.5" onClick={handleRemoveAvatar} disabled={avatarBusy}>
+                <Trash2 size={13} /> Quitar
+              </button>
+            )}
+            {avatarBusy && <Loader2 size={14} className="animate-spin text-text-muted" />}
+          </div>
+        </div>
+        <p className="text-xs text-text-muted">Foto o GIF, máximo 5 MB. O elige uno de los predefinidos:</p>
+        <div className="flex flex-wrap gap-2">
+          {AVATAR_PRESETS.map(({ key, icon: Icon, bg }) => {
+            const active = user?.avatar === `preset:${key}`
+            return (
+              <button
+                key={key}
+                onClick={() => handlePickPreset(key)}
+                disabled={avatarBusy}
+                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                  active ? 'ring-2 ring-primary ring-offset-2 ring-offset-surface' : 'opacity-80 hover:opacity-100'
+                }`}
+                style={{ background: bg }}
+                title={key}
+              >
+                <Icon size={18} color="white" />
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       <div className="card space-y-4">
         <h3 className="section-title">Mi perfil</h3>
         <div className="form-group">
@@ -162,6 +243,8 @@ interface UserRow {
   email: string
   role: UserRole
   is_active: boolean
+  avatar?: string | null
+  updated_at?: string
 }
 
 function UsersTab() {
@@ -236,10 +319,11 @@ function UsersTab() {
       </div>
       <div className="table-container">
         <table className="table">
-          <thead><tr>{['Usuario', 'Nombre', 'Email', 'Rol', 'Estado', ''].map((h) => <th key={h}>{h}</th>)}</tr></thead>
+          <thead><tr>{['', 'Usuario', 'Nombre', 'Email', 'Rol', 'Estado', ''].map((h) => <th key={h}>{h}</th>)}</tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
+                <td><Avatar user={u} size={28} /></td>
                 <td className="font-mono text-sm">{u.username}</td>
                 <td>{u.full_name}</td>
                 <td className="text-text-muted text-sm">{u.email}</td>

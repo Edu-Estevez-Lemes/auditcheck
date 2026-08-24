@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Aplicación
     APP_NAME: str = "AUDITCHECK"
-    APP_VERSION: str = "2.2.9"
+    APP_VERSION: str = "3.1.1"
     DEBUG: bool = False
 
     # Seguridad JWT
@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     BRANDING_DIR: Path = BASE_DIR / "assets" / "branding"
     CLIENTS_DIR: Path = BASE_DIR / "data" / "clients"
     AUDITS_DIR: Path = BASE_DIR / "data" / "audits"
+    AVATARS_DIR: Path = BASE_DIR / "data" / "avatars"
     KEY_FILE: Path = BASE_DIR / "data" / ".key"
 
     # Frontend (archivos compilados de React)
@@ -71,6 +72,7 @@ class Settings(BaseSettings):
             object.__setattr__(self, "BRANDING_DIR",base / "assets" / "branding")
             object.__setattr__(self, "CLIENTS_DIR", base / "data" / "clients")
             object.__setattr__(self, "AUDITS_DIR",  base / "data" / "audits")
+            object.__setattr__(self, "AVATARS_DIR", base / "data" / "avatars")
             object.__setattr__(self, "KEY_FILE",    base / "data" / ".key")
 
         frontend_override = os.environ.get("AUDITCHECK_FRONTEND_DIR")

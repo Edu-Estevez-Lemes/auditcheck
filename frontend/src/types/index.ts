@@ -4,6 +4,7 @@ export interface ReportBrandingConfig {
   header_color: string
   accent_color: string
   separator_color: string
+  date_format: string
 }
 
 export interface User {
@@ -17,6 +18,8 @@ export interface User {
   must_change_password: boolean
   last_login?: string
   created_at: string
+  updated_at?: string
+  avatar?: string | null
 }
 
 export interface AuditLogEntry {

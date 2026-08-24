@@ -1,10 +1,11 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, ClipboardList, GitCompare,
-  Settings, LogOut, ChevronRight, Shield
+  Settings, LogOut, ChevronRight
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import { Logo } from './Logo'
+import { Avatar } from './Avatar'
 import { GradientWaves } from './branding/GradientWaves'
 import toast from 'react-hot-toast'
 
@@ -59,9 +60,7 @@ export function Sidebar() {
       {/* User */}
       <div className="border-t border-border p-3">
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1">
-          <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-            <Shield size={14} className="text-primary" />
-          </div>
+          <Avatar user={user} size={32} />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-text-primary truncate">{user?.full_name}</p>
             <p className="text-xs text-text-muted truncate">

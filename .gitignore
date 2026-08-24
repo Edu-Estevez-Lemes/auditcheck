@@ -30,6 +30,7 @@ data/audits/
 data/vault_backups/
 data/backups/
 data/exports/
+data/avatars/
 
 # Cache de herramientas de build (descargas locales, no versionar)
 .build_cache/

@@ -23,7 +23,10 @@ def test_get_effective_items_returns_base_catalog_unmodified_without_overrides()
 
 
 def test_get_effective_items_hides_removed_default_item():
-    removed = {"hardware": {"windows_server": ["firmware"]}}
+    # "hardware" es una categoría plana ("_all"): la personalización se
+    # guarda bajo "_all", igual que hace el wizard, independientemente del
+    # device_type real del dispositivo.
+    removed = {"hardware": {"_all": ["firmware"]}}
     items = get_effective_items("hardware", "windows_server", removed, {})
     keys = [i["key"] for i in items]
     assert "firmware" not in keys
@@ -31,16 +34,30 @@ def test_get_effective_items_hides_removed_default_item():
 
 
 def test_get_effective_items_adds_custom_item():
-    custom = {"hardware": {"windows_server": [{"key": "custom_x_ab12cd", "label": "Revisión extra"}]}}
+    custom = {"hardware": {"_all": [{"key": "custom_x_ab12cd", "label": "Revisión extra"}]}}
     items = get_effective_items("hardware", "windows_server", {}, custom)
     custom_entries = [i for i in items if i["is_custom"]]
     assert len(custom_entries) == 1
     assert custom_entries[0]["label"] == "Revisión extra"
 
 
-def test_get_effective_items_removal_does_not_affect_other_device_type():
+def test_get_effective_items_custom_item_applies_to_any_device_type_in_flat_category():
+    """Al ser "_all", un ítem personalizado añadido para un tipo de dispositivo
+    debe reflejarse también en la exportación de otros tipos de la misma
+    categoría plana (bug: antes se indexaba por device_type real y nunca
+    aparecía en Excel/PDF)."""
+    custom = {"hardware": {"_all": [{"key": "custom_x_ab12cd", "label": "Revisión extra"}]}}
+    items = get_effective_items("hardware", "linux", {}, custom)
+    custom_entries = [i for i in items if i["is_custom"]]
+    assert len(custom_entries) == 1
+
+
+def test_get_effective_items_removal_by_device_type_key_in_flat_category_has_no_effect():
+    """Guardar removed_items bajo el device_type real (en vez de "_all") no
+    debe ocultar el ítem en una categoría plana: no es la clave que usa la
+    personalización de este tipo de categoría."""
     removed = {"hardware": {"windows_server": ["firmware"]}}
-    items = get_effective_items("hardware", "linux", removed, {})
+    items = get_effective_items("hardware", "windows_server", removed, {})
     keys = [i["key"] for i in items]
     assert "firmware" in keys
 

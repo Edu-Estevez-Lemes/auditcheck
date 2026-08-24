@@ -310,7 +310,7 @@ def generate_review_pdf(review_export_data: dict, output_path: Path) -> None:
             item_rows = [["Ítem de revisión", "OK", "Warning", "Critical"]]
             for item in cat_items:
                 status = items_results.get(item["key"], "")
-                label = item["label"] + (" (personalizado)" if item.get("is_custom") else "")
+                label = item["label"]
                 row_cells = [label, "", "", ""]
                 col_map = {"ok": 1, "warning": 2, "critical": 3}
                 if status in col_map:

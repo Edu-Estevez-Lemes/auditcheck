@@ -140,7 +140,7 @@ export const reviewsApi = {
 // Marca de informes (logo + colores corporativos de PDF/Excel)
 export const reportBrandingApi = {
   getConfig: () => api.get('/branding/report-config'),
-  updateConfig: (data: { header_color: string; accent_color: string; separator_color: string }) =>
+  updateConfig: (data: { header_color: string; accent_color: string; separator_color: string; date_format: string }) =>
     api.put('/branding/report-config', data),
   uploadLogo: (file: File) => {
     const form = new FormData()
@@ -196,6 +196,13 @@ export const authApi = {
   deleteUser: (id: number) => api.delete(`/auth/users/${id}`),
   updateUserRole: (id: number, role: string) => api.put(`/auth/users/${id}/role`, { role }),
   resetPassword: (id: number) => api.put(`/auth/users/${id}/reset-password`),
+  setAvatarPreset: (preset: string) => api.put('/auth/me/avatar/preset', { preset }),
+  uploadAvatar: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post('/auth/me/avatar', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+  deleteAvatar: () => api.delete('/auth/me/avatar'),
 }
 
 // Registro de actividad

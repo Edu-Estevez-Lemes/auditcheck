@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sun, Moon, TerminalSquare } from 'lucide-react'
 import { Sidebar } from '../components/Sidebar'
+import { Avatar } from '../components/Avatar'
 import { useAuthStore } from '../store/authStore'
 import { useThemeStore } from '../store/themeStore'
 import { useConsoleStore } from '../store/consoleStore'
@@ -54,6 +55,7 @@ export function MainLayout() {
               </span>
             )}
             <span className="text-sm text-text-secondary">{user?.full_name}</span>
+            <Avatar user={user} size={28} />
             <button
               onClick={toggleTheme}
               title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}

@@ -25,7 +25,7 @@ logger = logging.getLogger("auditcheck")
 
 def _ensure_dirs():
     for d in [settings.DATA_DIR, settings.ASSETS_DIR, settings.BRANDING_DIR,
-              settings.CLIENTS_DIR, settings.AUDITS_DIR,
+              settings.CLIENTS_DIR, settings.AUDITS_DIR, settings.AVATARS_DIR,
               settings.BACKUPS_DIR, settings.EXPORTS_DIR, settings.LOGS_DIR]:
         d.mkdir(parents=True, exist_ok=True)
 
@@ -103,6 +103,17 @@ def _migrate_db():
     except Exception as e:
         logger.warning(f"Migración DB (users): {e}")
 
+    # Migración users — avatar de perfil
+    try:
+        existing_ua = {c["name"] for c in inspector.get_columns("users")}
+        with engine.connect() as conn:
+            if "avatar" not in existing_ua:
+                conn.execute(text("ALTER TABLE users ADD COLUMN avatar VARCHAR(30)"))
+                logger.info("Migración: columna users.avatar añadida")
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Migración DB (users avatar): {e}")
+
     # Migración review_configs — personalización de checklist (plantillas + overrides por cliente)
     new_review_config_cols = {
         "template_id":    "INTEGER",
@@ -126,6 +137,19 @@ def _migrate_db():
                 conn.commit()
     except Exception as e:
         logger.warning(f"Migración DB (review_configs): {e}")
+
+    # Migración report_branding_config — formato de fecha configurable
+    try:
+        if "report_branding_config" in inspector.get_table_names():
+            existing_rbc = {c["name"] for c in inspector.get_columns("report_branding_config")}
+            with engine.connect() as conn:
+                if "date_format" not in existing_rbc:
+                    conn.execute(text("ALTER TABLE report_branding_config ADD COLUMN date_format VARCHAR(20)"))
+                    conn.execute(text("UPDATE report_branding_config SET date_format = '%d-%m-%Y' WHERE date_format IS NULL"))
+                    logger.info("Migración: columna report_branding_config.date_format añadida")
+                    conn.commit()
+    except Exception as e:
+        logger.warning(f"Migración DB (report_branding_config): {e}")
 
 
 def _migrate_roles():
@@ -362,6 +386,19 @@ def get_emoji1():
     if path.exists():
         return FileResponse(str(path), media_type="image/png")
     return JSONResponse(status_code=404, content={"detail": "emoji1.png no encontrado en assets/branding/"})
+
+
+@app.get("/api/v1/users/{user_id}/avatar")
+def get_user_avatar(user_id: int):
+    from .services.avatar import custom_avatar_path, ALLOWED_AVATAR_CONTENT_TYPES
+    path = custom_avatar_path(user_id)
+    if not path:
+        return JSONResponse(status_code=404, content={"detail": "Sin avatar personalizado"})
+    media_type = next(
+        (ct for ct, ext in ALLOWED_AVATAR_CONTENT_TYPES.items() if path.suffix == f".{ext}"),
+        "application/octet-stream",
+    )
+    return FileResponse(str(path), media_type=media_type)
 
 
 @app.get("/api/v1/info")

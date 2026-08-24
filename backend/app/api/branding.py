@@ -10,7 +10,7 @@ from ..services.auth import get_admin_user, get_current_user
 from ..models.user import User
 from ..models.report_branding import ReportBrandingConfig
 from ..schemas.report_branding import ReportBrandingOut, ReportBrandingUpdate
-from ..reports.report_branding import get_report_colors
+from ..reports.report_branding import get_report_branding_config
 
 router = APIRouter(prefix="/branding", tags=["Branding"])
 
@@ -47,10 +47,8 @@ async def upload_report_logo(file: UploadFile = File(...), _: User = Depends(get
 
 @router.get("/report-config", response_model=ReportBrandingOut)
 def get_report_config(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    colors = get_report_colors(db)
-    return ReportBrandingOut(
-        header_color=colors["header"], accent_color=colors["accent"], separator_color=colors["separator"],
-    )
+    config = get_report_branding_config(db)
+    return ReportBrandingOut.model_validate(config)
 
 
 @router.put("/report-config", response_model=ReportBrandingOut)
@@ -66,6 +64,7 @@ def update_report_config(
     config.header_color = data.header_color
     config.accent_color = data.accent_color
     config.separator_color = data.separator_color
+    config.date_format = data.date_format
     db.commit()
     db.refresh(config)
     return ReportBrandingOut.model_validate(config)

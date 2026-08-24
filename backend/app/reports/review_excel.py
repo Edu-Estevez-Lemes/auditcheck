@@ -180,7 +180,7 @@ def _write_category_sheet(
             for i, item in enumerate(cat_items):
                 status = items_results.get(item["key"], "")
                 row_style = STYLE_ROW_EVEN if i % 2 == 0 else _ODD_ROW
-                label = item["label"] + (" (personalizado)" if item.get("is_custom") else "")
+                label = item["label"]
 
                 _cell(ws, 1, row, label, row_style)
 

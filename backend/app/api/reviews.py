@@ -23,7 +23,7 @@ from ..models.client import Client
 from ..models.user import User
 from ..reports.review_items import REVIEW_ITEMS, CATEGORY_DEVICE_TYPES
 from ..reports.review_excel import generate_review_excel
-from ..reports.report_branding import get_report_colors
+from ..reports.report_branding import get_report_colors, get_report_date_format, format_report_date
 from ..services import review_checklist as checklist_svc
 from ..config import settings
 
@@ -72,11 +72,12 @@ def _build_export_data(db: Session, review: ReviewSession) -> dict:
             logo_path = str(p)
 
     category_labels = {c.key: c.label for c in checklist_svc.list_categories(db)}
+    review_date_fmt = format_report_date(review.review_date, get_report_date_format(db))
 
     return {
         "client_name": client.name if client else "",
         "technician_name": review.technician_name,
-        "review_date": review.review_date,
+        "review_date": review_date_fmt,
         "categories": review.categories or [],
         "devices": devices_info,
         "results": results,

@@ -32,8 +32,14 @@ class UserOut(UserBase):
     must_change_password: bool
     last_login: datetime | None = None
     created_at: datetime
+    updated_at: datetime
+    avatar: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class AvatarPresetRequest(BaseModel):
+    preset: str
 
 
 class Token(BaseModel):

@@ -17,7 +17,7 @@ from ..models.review_template import ReviewTemplate
 from ..models.review_config import ReviewConfig
 from ..models.review import ReviewSession
 from ..models.client import Client
-from ..reports.review_items import REVIEW_CATEGORIES, get_items_for_device
+from ..reports.review_items import REVIEW_CATEGORIES, REVIEW_ITEMS, get_items_for_device
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -121,16 +121,24 @@ def delete_category(db: Session, category: ReviewCategory, force: bool = False) 
 
 # ─── Ítems: merge catálogo base + personalización ──────────────────────────
 
+def _resolve_type_key(category: str, device_type: str) -> str:
+    """Las categorías "planas" almacenan personalización bajo "_all" (no por
+    device_type real), igual que el catálogo base — ver review_items.py."""
+    cat_map = REVIEW_ITEMS.get(category, {})
+    return "_all" if "_all" in cat_map else device_type
+
+
 def get_effective_items(
     category: str,
     device_type: str,
     removed_items: dict | None,
     custom_items: dict | None,
 ) -> list[dict]:
+    type_key = _resolve_type_key(category, device_type)
     base = get_items_for_device(device_type, category)
-    removed = set((removed_items or {}).get(category, {}).get(device_type, []) or [])
+    removed = set((removed_items or {}).get(category, {}).get(type_key, []) or [])
     effective = [dict(item, is_custom=False) for item in base if item["key"] not in removed]
-    extra = (custom_items or {}).get(category, {}).get(device_type, []) or []
+    extra = (custom_items or {}).get(category, {}).get(type_key, []) or []
     for it in extra:
         key, label = it.get("key"), it.get("label")
         if key and label:

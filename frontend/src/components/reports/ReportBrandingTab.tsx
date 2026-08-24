@@ -9,12 +9,30 @@ const DEFAULTS: ReportBrandingConfig = {
   header_color: '15121F',
   accent_color: '7C3AED',
   separator_color: '8B5CF6',
+  date_format: '%d-%m-%Y',
 }
 
 const FIELDS: { key: keyof ReportBrandingConfig; label: string; desc: string }[] = [
   { key: 'header_color', label: 'Color de cabecera / título', desc: 'Fondo de los títulos y cabeceras de tabla principales del informe.' },
   { key: 'accent_color', label: 'Color de acento de sección', desc: 'Barras de sección (p. ej. "RESUMEN") y banners de dispositivo.' },
   { key: 'separator_color', label: 'Color de línea separadora', desc: 'Línea entre la cabecera y el contenido (borde en Excel, regla en PDF).' },
+]
+
+const TODAY = new Date()
+
+function previewDate(format: string): string {
+  const dd = String(TODAY.getDate()).padStart(2, '0')
+  const mm = String(TODAY.getMonth() + 1).padStart(2, '0')
+  const yyyy = String(TODAY.getFullYear())
+  return format.replace('%d', dd).replace('%m', mm).replace('%Y', yyyy)
+}
+
+const DATE_FORMATS: { value: string; label: string }[] = [
+  { value: '%d-%m-%Y', label: `dd-mm-aaaa (${previewDate('%d-%m-%Y')})` },
+  { value: '%d/%m/%Y', label: `dd/mm/aaaa (${previewDate('%d/%m/%Y')})` },
+  { value: '%d.%m.%Y', label: `dd.mm.aaaa (${previewDate('%d.%m.%Y')})` },
+  { value: '%Y-%m-%d', label: `aaaa-mm-dd (${previewDate('%Y-%m-%d')})` },
+  { value: '%m/%d/%Y', label: `mm/dd/aaaa (${previewDate('%m/%d/%Y')})` },
 ]
 
 function normalizeHex(v: string): string {
@@ -38,7 +56,7 @@ export function ReportBrandingTab() {
   const saveMut = useMutation({
     mutationFn: (payload: ReportBrandingConfig) => reportBrandingApi.updateConfig(payload),
     onSuccess: () => {
-      toast.success('Colores de informe guardados')
+      toast.success('Configuración de informe guardada')
       qc.invalidateQueries({ queryKey: ['report-branding-config'] })
     },
     onError: () => toast.error('Error al guardar los colores'),
@@ -84,6 +102,22 @@ export function ReportBrandingTab() {
             <input type="file" accept="image/png" className="hidden" onChange={handleUploadLogo} />
           </label>
         </div>
+      </div>
+
+      <div className="card space-y-4 max-w-lg">
+        <h3 className="section-title">Formato de fecha</h3>
+        <p className="text-sm text-text-muted">
+          Formato con el que se muestra la fecha en los informes PDF y Excel de revisiones.
+        </p>
+        <select
+          value={form.date_format}
+          onChange={e => setForm(prev => ({ ...prev, date_format: e.target.value }))}
+          className="input w-full text-sm"
+        >
+          {DATE_FORMATS.map(({ value, label }) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="card space-y-4 max-w-lg">

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -7,12 +7,17 @@ from ..database import get_db
 from ..schemas.user import (
     Token, UserOut, UserCreate, UserUpdate,
     ChangePasswordRequest, RoleUpdateRequest, ResetPasswordOut, BootstrapRequest,
+    AvatarPresetRequest,
 )
 from ..services.auth import (
     authenticate_user, create_access_token, get_current_user, hash_password,
     verify_password, get_admin_user, require_role, generate_temp_password,
 )
 from ..services.audit_log import log_action
+from ..services.avatar import (
+    AVATAR_PRESET_KEYS, ALLOWED_AVATAR_CONTENT_TYPES, MAX_AVATAR_SIZE,
+    save_custom_avatar, clear_custom_avatar,
+)
 from ..models.user import User, ROLES
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
@@ -111,6 +116,50 @@ def change_password(
     db.commit()
     log_action(db, current_user, "change_password", target_type="user", target_id=current_user.id, request=request)
     return {"message": "Contraseña actualizada"}
+
+
+@router.put("/me/avatar/preset", response_model=UserOut)
+def set_avatar_preset(
+    data: AvatarPresetRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if data.preset not in AVATAR_PRESET_KEYS:
+        raise HTTPException(status_code=400, detail="Avatar predefinido no válido")
+    clear_custom_avatar(current_user.id)
+    current_user.avatar = f"preset:{data.preset}"
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/me/avatar", response_model=UserOut)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if file.content_type not in ALLOWED_AVATAR_CONTENT_TYPES:
+        raise HTTPException(status_code=400, detail="Formato no soportado. Usa PNG, JPG, GIF o WEBP")
+    data = await file.read()
+    if len(data) > MAX_AVATAR_SIZE:
+        raise HTTPException(status_code=400, detail="La imagen no puede superar 5 MB")
+    current_user.avatar = save_custom_avatar(current_user.id, file.content_type, data)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.delete("/me/avatar", response_model=UserOut)
+def delete_avatar(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    clear_custom_avatar(current_user.id)
+    current_user.avatar = None
+    db.commit()
+    db.refresh(current_user)
+    return current_user
 
 
 @router.get("/users", response_model=list[UserOut])
