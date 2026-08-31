@@ -7,30 +7,34 @@ import type { Credential, Device, DeviceUpdate } from '../types'
 import { DEVICE_TYPE_OPTIONS, DEVICE_TYPE_LABELS } from '../lib/utils'
 
 interface Props {
-  device: Device
+  device: Device | null
   auditId: number
   onClose: () => void
 }
 
 export function DeviceEditModal({ device, auditId, onClose }: Props) {
+  const isCreate = device === null
   const queryClient = useQueryClient()
 
-  const initialType = device.device_type === 'custom' || !DEVICE_TYPE_OPTIONS.find(o => o.value === device.device_type && o.value !== 'custom')
-    ? (DEVICE_TYPE_OPTIONS.find(o => o.value === device.device_type) ? device.device_type : 'custom')
-    : device.device_type
+  const initialType = !device
+    ? 'unknown'
+    : device.device_type === 'custom' || !DEVICE_TYPE_OPTIONS.find(o => o.value === device.device_type && o.value !== 'custom')
+      ? (DEVICE_TYPE_OPTIONS.find(o => o.value === device.device_type) ? device.device_type : 'custom')
+      : device.device_type
 
+  const [ipAddress, setIpAddress] = useState('')
   const [form, setForm] = useState<DeviceUpdate & { _customCategory: string }>({
-    display_name:    device.display_name ?? '',
-    hostname:        device.hostname ?? '',
+    display_name:    device?.display_name ?? '',
+    hostname:        device?.hostname ?? '',
     device_type:     initialType,
-    custom_category: device.custom_category ?? '',
-    manufacturer:    device.manufacturer ?? '',
-    os_type:         device.os_type ?? '',
-    location:        device.location ?? '',
-    description:     device.description ?? '',
-    observations:    device.observations ?? '',
-    credential_id:   device.credential_id ?? null,
-    _customCategory: device.custom_category ?? '',
+    custom_category: device?.custom_category ?? '',
+    manufacturer:    device?.manufacturer ?? '',
+    os_type:         device?.os_type ?? '',
+    location:        device?.location ?? '',
+    description:     device?.description ?? '',
+    observations:    device?.observations ?? '',
+    credential_id:   device?.credential_id ?? null,
+    _customCategory: device?.custom_category ?? '',
   })
   const [saving, setSaving] = useState(false)
 
@@ -47,6 +51,10 @@ export function DeviceEditModal({ device, auditId, onClose }: Props) {
   }
 
   async function handleSave() {
+    if (isCreate && !ipAddress.trim()) {
+      toast.error('Introduce una dirección IP')
+      return
+    }
     setSaving(true)
     try {
       const payload: DeviceUpdate = {
@@ -61,18 +69,25 @@ export function DeviceEditModal({ device, auditId, onClose }: Props) {
         observations:    form.observations || undefined,
         credential_id:   form.credential_id ?? null,
       }
-      await auditsApi.updateDevice(auditId, device.id, payload)
-      await queryClient.invalidateQueries({ queryKey: ['audit-devices', auditId] })
-      toast.success('Dispositivo actualizado')
+      if (!device) {
+        await auditsApi.addDevice(auditId, { ip_address: ipAddress.trim(), ...payload })
+        await queryClient.invalidateQueries({ queryKey: ['audit-devices', auditId] })
+        toast.success('Dispositivo añadido')
+      } else {
+        await auditsApi.updateDevice(auditId, device.id, payload)
+        await queryClient.invalidateQueries({ queryKey: ['audit-devices', auditId] })
+        toast.success('Dispositivo actualizado')
+      }
       onClose()
-    } catch {
-      toast.error('Error al guardar')
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail || 'Error al guardar')
     } finally {
       setSaving(false)
     }
   }
 
-  const displayLabel = DEVICE_TYPE_LABELS[device.device_type] ?? device.device_type
+  const displayLabel = device ? (DEVICE_TYPE_LABELS[device.device_type] ?? device.device_type) : ''
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -83,8 +98,10 @@ export function DeviceEditModal({ device, auditId, onClose }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div>
-            <h2 className="font-semibold text-text-primary">Editar dispositivo</h2>
-            <p className="text-xs text-text-muted font-mono mt-0.5">{device.ip_address} · {displayLabel}</p>
+            <h2 className="font-semibold text-text-primary">{isCreate ? 'Añadir dispositivo' : 'Editar dispositivo'}</h2>
+            {device && (
+              <p className="text-xs text-text-muted font-mono mt-0.5">{device.ip_address} · {displayLabel}</p>
+            )}
           </div>
           <button onClick={onClose} className="btn-ghost p-1.5"><X size={16} /></button>
         </div>
@@ -110,10 +127,22 @@ export function DeviceEditModal({ device, auditId, onClose }: Props) {
                   placeholder="Ej: DC01.gordillo.local"
                 />
               </Field>
-              <div className="grid grid-cols-2 gap-2 text-xs text-text-muted">
-                <div><span className="text-text-secondary">IP:</span> <span className="font-mono">{device.ip_address}</span></div>
-                <div><span className="text-text-secondary">MAC:</span> <span className="font-mono">{device.mac_address || 'No disponible'}</span></div>
-              </div>
+              {!device ? (
+                <Field label="Dirección IP *">
+                  <input
+                    className="input font-mono"
+                    value={ipAddress}
+                    onChange={e => setIpAddress(e.target.value)}
+                    placeholder="Ej: 192.168.10.10"
+                    autoFocus
+                  />
+                </Field>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 text-xs text-text-muted">
+                  <div><span className="text-text-secondary">IP:</span> <span className="font-mono">{device.ip_address}</span></div>
+                  <div><span className="text-text-secondary">MAC:</span> <span className="font-mono">{device.mac_address || 'No disponible'}</span></div>
+                </div>
+              )}
             </div>
           </section>
 
@@ -240,7 +269,7 @@ export function DeviceEditModal({ device, auditId, onClose }: Props) {
           <button className="btn-ghost" onClick={onClose} disabled={saving}>Cancelar</button>
           <button className="btn-primary" onClick={handleSave} disabled={saving}>
             <Save size={14} />
-            {saving ? 'Guardando...' : 'Guardar cambios'}
+            {saving ? 'Guardando...' : isCreate ? 'Añadir dispositivo' : 'Guardar cambios'}
           </button>
         </div>
       </div>

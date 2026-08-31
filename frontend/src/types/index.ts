@@ -100,6 +100,7 @@ export interface Audit {
   technician_id?: number
   name: string
   status: 'pending' | 'scanning' | 'completed' | 'error'
+  audit_type?: 'scan' | 'manual'
   started_at?: string
   completed_at?: string
   file_path?: string
@@ -121,11 +122,27 @@ export interface AuditSummary {
   client_name: string
   name: string
   status: string
+  audit_type?: 'scan' | 'manual'
   started_at?: string
   completed_at?: string
   total_devices: number
   total_findings: number
   critical_findings: number
+}
+
+export interface DeviceCreate {
+  ip_address: string
+  hostname?: string
+  device_type?: string
+  mac_address?: string
+  manufacturer?: string
+  os_type?: string
+  display_name?: string
+  custom_category?: string
+  location?: string
+  description?: string
+  observations?: string
+  credential_id?: number | null
 }
 
 export interface Device {

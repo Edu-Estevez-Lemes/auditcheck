@@ -8,6 +8,7 @@ class AuditCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     notes: str | None = None
     scanned_ranges: str | None = None
+    audit_type: str = "scan"
 
 
 class AuditUpdate(BaseModel):
@@ -23,6 +24,7 @@ class AuditOut(BaseModel):
     technician_id: int | None = None
     name: str
     status: str
+    audit_type: str = "scan"
     started_at: datetime | None = None
     completed_at: datetime | None = None
     file_path: str | None = None
@@ -47,6 +49,7 @@ class AuditSummary(BaseModel):
     client_name: str = ""
     name: str
     status: str
+    audit_type: str = "scan"
     started_at: datetime | None = None
     completed_at: datetime | None = None
     total_devices: int = 0

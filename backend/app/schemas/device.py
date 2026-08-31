@@ -52,6 +52,21 @@ class DeviceOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DeviceCreate(BaseModel):
+    ip_address: str
+    hostname: str | None = None
+    device_type: str = "unknown"
+    mac_address: str | None = None
+    manufacturer: str | None = None
+    os_type: str | None = None
+    display_name: str | None = None
+    custom_category: str | None = None
+    location: str | None = None
+    description: str | None = None
+    observations: str | None = None
+    credential_id: int | None = None
+
+
 class DeviceUpdate(BaseModel):
     display_name: str | None = None
     hostname: str | None = None

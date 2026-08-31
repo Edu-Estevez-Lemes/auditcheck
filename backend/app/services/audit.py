@@ -64,6 +64,7 @@ def list_audits(db: Session, client_id: int | None = None, skip: int = 0, limit:
             client_name=client.name if client else "",
             name=a.name,
             status=a.status,
+            audit_type=a.audit_type,
             started_at=a.started_at,
             completed_at=a.completed_at,
             total_devices=total_devices,
@@ -81,12 +82,65 @@ def create_audit(db: Session, data: AuditCreate, technician_id: int) -> AuditOut
         notes=data.notes,
         scanned_ranges=data.scanned_ranges,
         status="pending",
+        audit_type="scan",
         app_version=settings.APP_VERSION,
     )
     db.add(audit)
     db.commit()
     db.refresh(audit)
     return _enrich_audit(db, audit)
+
+
+def create_manual_audit(db: Session, data: AuditCreate, technician_id: int) -> AuditOut:
+    """Crea una auditoría sin escaneo de red, para clientes solo accesibles por AnyDesk.
+
+    Los hosts se dan de alta a mano (POST /audits/{id}/devices) y el checklist se
+    completa vía el módulo de Revisiones. Se precargan como Device los hosts conocidos
+    del cliente (DeviceKnowledge), igual que haría un escaneo nuevo al fusionar con el
+    conocimiento persistente, para no tener que re-teclearlos en cada auditoría.
+    """
+    audit = Audit(
+        client_id=data.client_id,
+        technician_id=technician_id,
+        name=data.name,
+        notes=data.notes,
+        status="pending",
+        audit_type="manual",
+        app_version=settings.APP_VERSION,
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(audit)
+
+    _seed_devices_from_knowledge(db, audit)
+
+    return _enrich_audit(db, audit)
+
+
+def _seed_devices_from_knowledge(db: Session, audit: Audit) -> None:
+    known = db.query(DeviceKnowledge).filter(DeviceKnowledge.client_id == audit.client_id).all()
+    for k in known:
+        device = Device(
+            audit_id=audit.id,
+            client_id=audit.client_id,
+            ip_address=k.ip_address,
+            mac_address=k.mac_address,
+            manufacturer=k.manufacturer,
+            os_type=k.os_type,
+            device_type=k.device_type or "unknown",
+            display_name=k.display_name,
+            custom_category=k.custom_category,
+            location=k.location,
+            description=k.description,
+            observations=k.observations,
+            credential_id=k.credential_id,
+            manually_edited=True,
+            is_new_device=False,
+            is_up=True,
+        )
+        db.add(device)
+    if known:
+        db.commit()
 
 
 def get_audit(db: Session, audit_id: int) -> AuditOut:

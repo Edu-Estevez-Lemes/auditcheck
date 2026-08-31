@@ -138,6 +138,18 @@ def _migrate_db():
     except Exception as e:
         logger.warning(f"Migración DB (review_configs): {e}")
 
+    # Migración audits — auditoría manual (clientes solo accesibles por AnyDesk)
+    try:
+        existing_a = {c["name"] for c in inspector.get_columns("audits")}
+        with engine.connect() as conn:
+            if "audit_type" not in existing_a:
+                conn.execute(text("ALTER TABLE audits ADD COLUMN audit_type VARCHAR(20) DEFAULT 'scan'"))
+                conn.execute(text("UPDATE audits SET audit_type = 'scan' WHERE audit_type IS NULL"))
+                logger.info("Migración: columna audits.audit_type añadida")
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Migración DB (audits): {e}")
+
     # Migración report_branding_config — formato de fecha configurable
     try:
         if "report_branding_config" in inspector.get_table_names():

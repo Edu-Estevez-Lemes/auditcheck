@@ -307,6 +307,12 @@ def update_review(
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(session, field, value)
 
+    if session.is_completed:
+        audit = db.query(Audit).filter(Audit.id == session.audit_id).first()
+        if audit and audit.audit_type == "manual" and audit.status != "completed":
+            audit.status = "completed"
+            audit.completed_at = _dt.datetime.utcnow()
+
     db.commit()
     db.refresh(session)
     return ReviewOut.model_validate(session)

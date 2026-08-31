@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { Play, StopCircle, CheckCircle, AlertCircle, Wifi } from 'lucide-react'
+import { Play, StopCircle, CheckCircle, AlertCircle, Wifi, ClipboardEdit } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { scanApi } from '../lib/api'
+import { scanApi, auditsApi } from '../lib/api'
 import type { ClientSummary, ScanEvent } from '../types'
 
 interface Props {
@@ -24,6 +24,8 @@ interface ScanProgress {
 
 export function AuditWizard({ clients, onSuccess, onCancel, initialClientId, onScanningChange }: Props) {
   const [phase, setPhase] = useState<Phase>('config')
+  const [auditType, setAuditType] = useState<'scan' | 'manual'>('scan')
+  const [creatingManual, setCreatingManual] = useState(false)
   const [form, setForm] = useState({
     client_id: initialClientId ? String(initialClientId) : '',
     audit_name: '',
@@ -56,6 +58,29 @@ export function AuditWizard({ clients, onSuccess, onCancel, initialClientId, onS
   useEffect(() => {
     return () => { wsRef.current?.close() }
   }, [])
+
+  const handleStartManual = async () => {
+    if (!form.client_id || !form.audit_name) {
+      toast.error('Selecciona un cliente e introduce un nombre para la auditoría')
+      return
+    }
+    setCreatingManual(true)
+    try {
+      const { data } = await auditsApi.create({
+        client_id: Number(form.client_id),
+        name: form.audit_name,
+        notes: form.notes,
+        audit_type: 'manual',
+      })
+      toast.success('Auditoría manual creada. Añade los hosts y completa el checklist.')
+      onSuccess(data.id)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail || 'Error al crear la auditoría manual')
+    } finally {
+      setCreatingManual(false)
+    }
+  }
 
   const handleStart = async () => {
     if (!form.client_id || !form.audit_name) {
@@ -178,43 +203,71 @@ export function AuditWizard({ clients, onSuccess, onCancel, initialClientId, onS
             </div>
           )}
           <div className="form-group col-span-2">
-            <label className="label">Nombre de la revisión *</label>
+            <label className="label">Nombre de la {auditType === 'manual' ? 'auditoría' : 'revisión'} *</label>
             <input className="input" placeholder="ej: Revisión mensual Mayo 2026"
               value={form.audit_name} onChange={(e) => setForm({ ...form, audit_name: e.target.value })} />
           </div>
         </div>
 
-        <div className="space-y-3 p-4 bg-surface-2 rounded-lg border border-border">
-          <p className="text-sm font-medium text-text-primary">Rangos IP a escanear</p>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={form.use_client_ranges}
-              onChange={(e) => setForm({ ...form, use_client_ranges: e.target.checked })} />
-            <span className="text-sm text-text-secondary">
-              Usar rangos configurados del cliente
-              {selectedClient && ` (${selectedClient.name})`}
+        <div className="p-3 bg-surface-2 rounded-lg border border-border grid grid-cols-2 gap-2">
+          <label className={`flex items-start gap-2 p-2 rounded-lg cursor-pointer border ${auditType === 'scan' ? 'border-primary bg-primary/5' : 'border-transparent'}`}>
+            <input type="radio" name="audit_type" className="mt-1" checked={auditType === 'scan'}
+              onChange={() => setAuditType('scan')} />
+            <span>
+              <span className="block text-sm font-medium text-text-primary">Escaneo de red automático</span>
+              <span className="block text-xs text-text-muted">Descubre y recopila datos escaneando los rangos IP del cliente.</span>
             </span>
           </label>
-          <div className="form-group">
-            <label className="label">Rangos adicionales (uno por línea)</label>
-            <textarea className="input font-mono text-xs resize-none" rows={3}
-              placeholder={'192.168.10.0/24\n10.0.0.1-10.0.0.50'}
-              value={form.extra_ranges}
-              onChange={(e) => setForm({ ...form, extra_ranges: e.target.value })} />
-          </div>
+          <label className={`flex items-start gap-2 p-2 rounded-lg cursor-pointer border ${auditType === 'manual' ? 'border-primary bg-primary/5' : 'border-transparent'}`}>
+            <input type="radio" name="audit_type" className="mt-1" checked={auditType === 'manual'}
+              onChange={() => setAuditType('manual')} />
+            <span>
+              <span className="block text-sm font-medium text-text-primary">Auditoría manual</span>
+              <span className="block text-xs text-text-muted">Sin escaneo — para clientes solo accesibles por AnyDesk. Los hosts se dan de alta a mano.</span>
+            </span>
+          </label>
         </div>
+
+        {auditType === 'scan' && (
+          <div className="space-y-3 p-4 bg-surface-2 rounded-lg border border-border">
+            <p className="text-sm font-medium text-text-primary">Rangos IP a escanear</p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.use_client_ranges}
+                onChange={(e) => setForm({ ...form, use_client_ranges: e.target.checked })} />
+              <span className="text-sm text-text-secondary">
+                Usar rangos configurados del cliente
+                {selectedClient && ` (${selectedClient.name})`}
+              </span>
+            </label>
+            <div className="form-group">
+              <label className="label">Rangos adicionales (uno por línea)</label>
+              <textarea className="input font-mono text-xs resize-none" rows={3}
+                placeholder={'192.168.10.0/24\n10.0.0.1-10.0.0.50'}
+                value={form.extra_ranges}
+                onChange={(e) => setForm({ ...form, extra_ranges: e.target.value })} />
+            </div>
+          </div>
+        )}
 
         <div className="form-group">
           <label className="label">Notas</label>
-          <input className="input" placeholder="Notas opcionales para esta revisión"
+          <input className="input" placeholder="Notas opcionales para esta auditoría"
             value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
         </div>
 
         <div className="flex gap-3 justify-end border-t border-border pt-4">
           <button className="btn-secondary" onClick={onCancel}>Cancelar</button>
-          <button className="btn-primary" onClick={handleStart}
-            disabled={!form.client_id || !form.audit_name}>
-            <Play size={15} /> Iniciar escaneo
-          </button>
+          {auditType === 'manual' ? (
+            <button className="btn-primary" onClick={handleStartManual}
+              disabled={!form.client_id || !form.audit_name || creatingManual}>
+              <ClipboardEdit size={15} /> {creatingManual ? 'Creando...' : 'Crear auditoría manual'}
+            </button>
+          ) : (
+            <button className="btn-primary" onClick={handleStart}
+              disabled={!form.client_id || !form.audit_name}>
+              <Play size={15} /> Iniciar escaneo
+            </button>
+          )}
         </div>
       </div>
     )

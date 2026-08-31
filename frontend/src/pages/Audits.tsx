@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, ClipboardList, Trash2, Download, Play } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -12,6 +12,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog'
 
 export function AuditsPage() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [showWizard, setShowWizard] = useState(false)
   const [deleteId, setDeleteId] = useState<number | null>(null)
@@ -116,6 +117,9 @@ export function AuditsPage() {
                     <Link to={`/audits/${a.id}`} className="font-medium text-primary hover:underline">
                       {a.name}
                     </Link>
+                    {a.audit_type === 'manual' && (
+                      <span className="badge badge-info ml-2 text-[10px]" title="Auditoría manual (sin escaneo)">Manual</span>
+                    )}
                   </td>
                   <td className="text-text-secondary">{a.client_name}</td>
                   <td>{statusBadge(a.status)}</td>
@@ -161,6 +165,7 @@ export function AuditsPage() {
           onSuccess={(auditId) => {
             setShowWizard(false)
             qc.invalidateQueries({ queryKey: ['audits'] })
+            navigate(`/audits/${auditId}`)
           }}
           onCancel={() => setShowWizard(false)}
         />

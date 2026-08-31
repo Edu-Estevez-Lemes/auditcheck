@@ -2,7 +2,7 @@ import { useState, useMemo, Fragment } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, Download, Server, AlertTriangle, Network, Shield,
+  ArrowLeft, Download, Server, AlertTriangle, Network, Shield, Plus,
   Copy, Monitor, Globe, Terminal, Pencil, Sparkles, Key, Zap,
   ChevronUp, ChevronDown, ChevronsUpDown, ClipboardList, Map, XCircle,
 } from 'lucide-react'
@@ -221,6 +221,7 @@ export function AuditDetail() {
   const [sortField, setSortField] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [editingDevice, setEditingDevice] = useState<Device | null>(null)
+  const [addingDevice, setAddingDevice] = useState(false)
   const [credPanel, setCredPanel] = useState<{ open: boolean; device: Device | null }>({ open: false, device: null })
   const [reviewWizardOpen, setReviewWizardOpen] = useState(false)
   const [webPanel, setWebPanel] = useState<{
@@ -479,12 +480,23 @@ export function AuditDetail() {
       <div className="flex items-center gap-4">
         <button onClick={() => navigate('/audits')} className="btn-ghost p-2"><ArrowLeft size={18} /></button>
         <div className="flex-1">
-          <h1 className="page-title">{audit.name}</h1>
+          <h1 className="page-title flex items-center gap-2">
+            {audit.name}
+            {audit.audit_type === 'manual' && (
+              <span className="badge badge-info text-[10px]" title="Auditoría manual (sin escaneo)">Manual</span>
+            )}
+          </h1>
           <p className="text-sm text-text-muted mt-0.5">
             <Link to={`/clients/${audit.client_id}`} className="text-primary hover:underline">Cliente</Link>
             {audit.completed_at && ` · ${formatDate(audit.completed_at)}`}
           </p>
         </div>
+        {audit.audit_type === 'manual' && (
+          <button className="btn-ghost flex items-center gap-1.5" onClick={() => setAddingDevice(true)}>
+            <Plus size={15} />
+            Añadir host
+          </button>
+        )}
         {audit.total_devices > 0 && (
           <button className="btn-ghost flex items-center gap-1.5" onClick={() => setReviewWizardOpen(true)}>
             <ClipboardList size={15} />
@@ -987,6 +999,15 @@ export function AuditDetail() {
         />
       )}
 
+      {/* Modal de alta manual de host */}
+      {addingDevice && (
+        <DeviceEditModal
+          device={null}
+          auditId={auditId}
+          onClose={() => setAddingDevice(false)}
+        />
+      )}
+
       {/* Panel rápido de credenciales */}
       {credPanel.device && audit && (
         <CredentialQuickPanel
@@ -1005,6 +1026,7 @@ export function AuditDetail() {
         onClose={() => setReviewWizardOpen(false)}
         auditId={auditId}
         clientId={audit.client_id}
+        auditType={audit.audit_type}
       />
     </div>
   )

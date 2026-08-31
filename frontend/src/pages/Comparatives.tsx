@@ -34,7 +34,9 @@ export function ComparativesPage() {
     enabled: clientId !== null,
   })
 
-  const completedAudits = audits.filter((a) => a.status === 'completed')
+  // Las auditorías manuales no tienen datos de escaneo (dispositivos/puertos) y se excluyen
+  // del comparador técnico — se identifican con el badge "Manual" en el resto de la app.
+  const completedAudits = audits.filter((a) => a.status === 'completed' && a.audit_type !== 'manual')
 
   const handleCompare = async () => {
     if (!auditAId || !auditBId) return

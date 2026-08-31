@@ -63,6 +63,7 @@ def get_recent_audits(limit: int = 10, db: Session = Depends(get_db), _: User = 
             "client_name": client.name if client else "",
             "client_id": a.client_id,
             "status": a.status,
+            "audit_type": a.audit_type,
             "completed_at": a.completed_at.isoformat() if a.completed_at else None,
             "critical_findings": critical,
         })

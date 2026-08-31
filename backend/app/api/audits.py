@@ -5,10 +5,10 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..schemas.audit import AuditCreate, AuditUpdate, AuditOut, AuditSummary
-from ..schemas.device import DeviceOut, DeviceUpdate, PortOut
+from ..schemas.device import DeviceOut, DeviceUpdate, DeviceCreate, PortOut
 from ..schemas.credential import CredentialOut
 from ..schemas.finding import FindingCreate, FindingUpdate, FindingOut
-from ..services.audit import list_audits, create_audit, get_audit, update_audit, delete_audit
+from ..services.audit import list_audits, create_audit, create_manual_audit, get_audit, update_audit, delete_audit
 from ..services.comparison import compare_audits
 from ..schemas.network_map import NetworkMapOut
 from ..services.network_map import build_network_map
@@ -92,6 +92,8 @@ def get_audits(
 
 @router.post("/", response_model=AuditOut, status_code=201)
 def create(data: AuditCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if data.audit_type == "manual":
+        return create_manual_audit(db, data, current_user.id)
     return create_audit(db, data, current_user.id)
 
 
@@ -140,6 +142,77 @@ def get_client_credentials(
 def get_devices(audit_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     devices = db.query(Device).filter(Device.audit_id == audit_id).all()
     return [_enrich_device(db, d) for d in devices]
+
+
+@router.post("/{audit_id}/devices", response_model=DeviceOut, status_code=201)
+def add_device(
+    audit_id: int, data: DeviceCreate,
+    db: Session = Depends(get_db), _: User = Depends(get_current_user),
+):
+    """Alta manual de un host (auditorías manuales, sin escaneo de red)."""
+    import ipaddress
+
+    audit = db.query(Audit).filter(Audit.id == audit_id).first()
+    if not audit:
+        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+
+    try:
+        ipaddress.ip_address(data.ip_address)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Dirección IP no válida")
+
+    existing = db.query(Device).filter(
+        Device.audit_id == audit_id, Device.ip_address == data.ip_address,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Ya existe un dispositivo con esa IP en esta auditoría")
+
+    knowledge = db.query(DeviceKnowledge).filter(
+        DeviceKnowledge.client_id == audit.client_id,
+        DeviceKnowledge.ip_address == data.ip_address,
+    ).first()
+
+    device = Device(
+        audit_id=audit_id,
+        client_id=audit.client_id,
+        ip_address=data.ip_address,
+        hostname=data.hostname,
+        device_type=data.device_type,
+        mac_address=data.mac_address,
+        manufacturer=data.manufacturer,
+        os_type=data.os_type,
+        display_name=data.display_name,
+        custom_category=data.custom_category,
+        location=data.location,
+        description=data.description,
+        observations=data.observations,
+        credential_id=data.credential_id,
+        manually_edited=True,
+        is_new_device=knowledge is None,
+        is_up=True,
+    )
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+
+    _sync_knowledge(db, device, audit_id, [
+        "display_name", "device_type", "custom_category", "manufacturer",
+        "os_type", "location", "description", "observations", "credential_id",
+    ])
+
+    return _enrich_device(db, device)
+
+
+@router.delete("/{audit_id}/devices/{device_id}", status_code=204)
+def delete_device(
+    audit_id: int, device_id: int,
+    db: Session = Depends(get_db), _: User = Depends(get_current_user),
+):
+    device = db.query(Device).filter(Device.id == device_id, Device.audit_id == audit_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Dispositivo no encontrado")
+    db.delete(device)
+    db.commit()
 
 
 @router.put("/{audit_id}/devices/{device_id}", response_model=DeviceOut)

@@ -57,7 +57,7 @@ export function ClientDetail() {
 
   const handleNewReview = async () => {
     if (audits.length === 0) {
-      toast.error('No hay auditorías para este cliente. Realiza una auditoría primero.')
+      toast.error('No hay auditorías para este cliente. Crea una auditoría (o una Auditoría Manual si solo tienes acceso por AnyDesk) primero.')
       return
     }
     const latestAudit = audits[0]
@@ -420,7 +420,12 @@ export function ClientDetail() {
                         />
                       </td>
                     )}
-                    <td><Link to={`/audits/${a.id}`} className="text-primary hover:underline">{a.name}</Link></td>
+                    <td>
+                      <Link to={`/audits/${a.id}`} className="text-primary hover:underline">{a.name}</Link>
+                      {a.audit_type === 'manual' && (
+                        <span className="badge badge-info ml-2 text-[10px]" title="Auditoría manual (sin escaneo)">Manual</span>
+                      )}
+                    </td>
                     <td><span className={`badge badge-${a.status === 'completed' ? 'success' : a.status === 'error' ? 'error' : 'info'}`}>{a.status}</span></td>
                     <td>{a.total_devices}</td>
                     <td>{a.total_findings}</td>
@@ -518,6 +523,7 @@ export function ClientDetail() {
           reviewConfig={reviewConfig}
           configMode={configMode}
           appliedTemplate={appliedTemplate}
+          auditType={audits.find((a) => a.id === wizardAuditId)?.audit_type}
         />
       )}
     </div>

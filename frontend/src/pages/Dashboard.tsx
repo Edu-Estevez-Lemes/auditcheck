@@ -144,7 +144,12 @@ export function Dashboard() {
                 <Link key={a.id} to={`/audits/${a.id}`} className="block">
                   <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-2 hover:bg-border-2 transition-colors">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-text-primary truncate">{a.name}</p>
+                      <p className="text-sm font-medium text-text-primary truncate flex items-center gap-1.5">
+                        {a.name}
+                        {a.audit_type === 'manual' && (
+                          <span className="badge badge-info text-[10px] shrink-0" title="Auditoría manual (sin escaneo)">Manual</span>
+                        )}
+                      </p>
                       <p className="text-xs text-text-muted">{a.client_name}</p>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">

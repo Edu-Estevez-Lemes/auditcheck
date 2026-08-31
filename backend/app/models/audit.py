@@ -19,6 +19,9 @@ class Audit(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(30), default="pending")
     # Estados: pending, scanning, completed, error
 
+    audit_type: Mapped[str] = mapped_column(String(20), default="scan")
+    # Tipos: scan (escaneo de red automático), manual (sin escaneo, alta manual de hosts)
+
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

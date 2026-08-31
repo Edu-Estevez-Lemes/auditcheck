@@ -29,6 +29,7 @@ interface ReviewWizardModalProps {
   reviewConfig?: ReviewConfig | null
   configMode?: ReviewConfigMode
   appliedTemplate?: ReviewTemplate | null
+  auditType?: 'scan' | 'manual'
 }
 
 // deviceCategories: Record<deviceId string, string[]>
@@ -224,6 +225,7 @@ function autoDetectCats(deviceType: string, categories: string[], checklist: Rev
 export function ReviewWizardModal({
   open, onClose, auditId, clientId, clientName,
   reviewConfig = null, configMode = 'reset', appliedTemplate = null,
+  auditType = 'scan',
 }: ReviewWizardModalProps) {
   const user = useAuthStore((s) => s.user)
 
@@ -277,8 +279,11 @@ export function ReviewWizardModal({
     ]).then(([chkRes, devRes, clientRes]) => {
       const chk = chkRes.data as ReviewChecklist
       setChecklist(chk)
-      const credDevices = (devRes.data as Device[]).filter(d => !!d.credential_name || !!d.credential_id)
-      setDevices(credDevices)
+      // En auditorías manuales (sin escaneo) no se exige credencial para seleccionar un host.
+      const availableDevices = auditType === 'manual'
+        ? (devRes.data as Device[])
+        : (devRes.data as Device[]).filter(d => !!d.credential_name || !!d.credential_id)
+      setDevices(availableDevices)
       if (!clientName && (clientRes as { name?: string })?.name) {
         setResolvedClientName((clientRes as { name: string }).name)
       }
@@ -302,7 +307,7 @@ export function ReviewWizardModal({
         const addedDevices: string[] = []
 
         reviewConfig.hosts.forEach(configHost => {
-          const device = credDevices.find(d => d.ip_address === configHost.ip)
+          const device = availableDevices.find(d => d.ip_address === configHost.ip)
           if (!device) {
             removed.push(`${configHost.nombre} (${configHost.ip})`)
             return
@@ -312,7 +317,7 @@ export function ReviewWizardModal({
         })
 
         // Detect new credentialed devices not in config
-        credDevices.forEach(d => {
+        availableDevices.forEach(d => {
           if (!selectedIds.has(d.id) && !reviewConfig.hosts.some(h => h.ip === d.ip_address)) {
             addedDevices.push(`${d.display_name || d.hostname || d.ip_address} (${d.ip_address})`)
           }
@@ -331,7 +336,7 @@ export function ReviewWizardModal({
       }
     }).catch(() => toast.error('Error cargando datos de revisión'))
       .finally(() => setLoading(false))
-  }, [open, auditId, clientId, clientName, user, reviewConfig, configMode, appliedTemplate])
+  }, [open, auditId, clientId, clientName, user, reviewConfig, configMode, appliedTemplate, auditType])
 
   const totalSteps = (state.categories.length || 1) + 2
   const currentLabel = step === 0

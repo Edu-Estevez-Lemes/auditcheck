@@ -70,6 +70,10 @@ export const auditsApi = {
   delete: (id: number) => api.delete(`/audits/${id}`),
   deleteBatch: (ids: number[]) => api.delete('/audits/batch', { data: { ids } }),
   getDevices: (id: number) => api.get(`/audits/${id}/devices`),
+  addDevice: (auditId: number, data: unknown) =>
+    api.post(`/audits/${auditId}/devices`, data),
+  deleteDevice: (auditId: number, deviceId: number) =>
+    api.delete(`/audits/${auditId}/devices/${deviceId}`),
   updateDevice: (auditId: number, deviceId: number, data: unknown) =>
     api.put(`/audits/${auditId}/devices/${deviceId}`, data),
   downloadRdp: (auditId: number, deviceId: number) =>
