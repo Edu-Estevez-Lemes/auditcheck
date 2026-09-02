@@ -21,6 +21,10 @@
   --ac-text-secondary:  157 142 196;
   --ac-text-muted:      107 95 138;
 
+  /* Cabecera de marca (sidebar): en oscuro no se personaliza, sigue a surface */
+  --ac-brand-header:    var(--ac-surface);
+  --ac-brand-header-fg: var(--ac-text-primary);
+
   /* Bloque 6 — gradiente de fondo (login + cabecera del logo): #161224 / #0c0914 */
   --gw-c1: 22 18 36;
   --gw-c2: 12 9 20;
@@ -44,6 +48,11 @@
   --ac-text-primary:    30 11 62;
   --ac-text-secondary:  74 53 112;
   --ac-text-muted:      124 92 178;
+
+  /* Cabecera de marca (sidebar): por defecto blanco liso; useBrandTheme la
+     sustituye por el color corporativo elegido en instalación/Configuración. */
+  --ac-brand-header:    var(--ac-surface);
+  --ac-brand-header-fg: var(--ac-text-primary);
 }
 
 @layer base {
@@ -153,9 +162,10 @@
   animation: gw-shift 26s ease-in-out infinite;
 }
 
-/* Tema claro: la cabecera del logo pierde el gradiente y pasa a blanco liso. */
+/* Tema claro: la cabecera del logo pierde el gradiente y pasa al color de marca
+   (blanco por defecto; el corporativo elegido en instalación si se configuró). */
 :root.theme-light .gw-root--sidebar .gw-gradient--sidebar {
-  background: rgb(var(--ac-surface));
+  background: rgb(var(--ac-brand-header));
   animation: none;
 }
 :root.theme-light .gw-root--sidebar .gw-wave-a,

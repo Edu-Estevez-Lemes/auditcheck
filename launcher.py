@@ -29,6 +29,16 @@ import multiprocessing
 # ───────────────────────────────────────────────────────────────────────────
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# El instalador escribe el puerto elegido en un .env junto a este archivo.
+# Sin esto, .env queda ahí escrito pero nadie lo lee: AUDITCHECK_PORT nunca
+# llega a os.environ y el servidor siempre arranca en el puerto por defecto.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(HERE, ".env"))
+except ImportError:
+    pass
+
 _is_dist = os.path.isdir(os.path.join(HERE, "python")) and \
            os.path.isdir(os.path.join(HERE, "frontend_dist"))
 

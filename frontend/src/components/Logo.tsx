@@ -4,6 +4,10 @@ interface LogoProps {
   size?: 'sm' | 'md' | 'lg'
   showText?: boolean
   className?: string
+  /** 'on-brand-header': el wordmark de respaldo se pinta sobre --ac-brand-header
+   *  (puede ser un color corporativo oscuro), así que usa brand-header-fg en vez
+   *  de text-primary para mantener el contraste. */
+  variant?: 'default' | 'on-brand-header'
 }
 
 const sizes = {
@@ -40,9 +44,10 @@ function EggplantMark({ size }: { size: number }) {
   )
 }
 
-export function Logo({ size = 'md', showText = true, className = '' }: LogoProps) {
+export function Logo({ size = 'md', showText = true, className = '', variant = 'default' }: LogoProps) {
   const [imgError, setImgError] = useState(false)
   const s = sizes[size]
+  const wordmarkColor = variant === 'on-brand-header' ? 'text-brand-header-fg' : 'text-text-primary'
 
   return (
     <div className={`flex items-center gap-3 ${className}`}>
@@ -59,7 +64,7 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
             <EggplantMark size={s.icon} />
           </span>
           {showText && (
-            <span className={`font-bold ${s.text} text-text-primary tracking-tight`}>
+            <span className={`font-bold ${s.text} ${wordmarkColor} tracking-tight`}>
               AUDIT<span className="text-primary">CHECK</span>
             </span>
           )}

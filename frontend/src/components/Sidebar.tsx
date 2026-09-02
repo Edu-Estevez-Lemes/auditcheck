@@ -34,7 +34,7 @@ export function Sidebar() {
         <div className="absolute inset-0 pointer-events-none">
           <GradientWaves className="w-full h-full" palette="sidebar" waveCount={4} />
         </div>
-        <Logo size="md" showText className="relative" />
+        <Logo size="md" showText className="relative" variant="on-brand-header" />
       </div>
 
       {/* Nav */}

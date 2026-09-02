@@ -13,6 +13,8 @@ export default {
         'primary-hover':  'rgb(var(--ac-primary-hover) / <alpha-value>)',
         'primary-dim':    'rgb(var(--ac-primary-dim)  / <alpha-value>)',
         accent:           'rgb(var(--ac-accent)        / <alpha-value>)',
+        'brand-header':    'rgb(var(--ac-brand-header)    / <alpha-value>)',
+        'brand-header-fg': 'rgb(var(--ac-brand-header-fg) / <alpha-value>)',
         success:          'rgb(var(--ac-success)       / <alpha-value>)',
         warning:          'rgb(var(--ac-warning)       / <alpha-value>)',
         danger:           'rgb(var(--ac-danger)        / <alpha-value>)',
