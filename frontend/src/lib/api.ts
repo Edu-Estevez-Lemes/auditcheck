@@ -153,6 +153,29 @@ export const reportBrandingApi = {
   },
 }
 
+// Identidad visual: logo/icono de la app (comunes a ambos modos) + colores de
+// interfaz (distintos por modo oscuro/claro)
+export const appBrandingApi = {
+  uploadLogo: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post('/branding/logo', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+  uploadIcon: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post('/branding/icon', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+}
+
+export const uiThemeApi = {
+  getConfig: () => api.get('/branding/ui-theme'),
+  updateConfig: (data: {
+    dark_background: string | null; dark_text: string | null; dark_accent: string | null
+    light_background: string | null; light_text: string | null; light_accent: string | null
+  }) => api.put('/branding/ui-theme', data),
+}
+
 // Categorías de revisión (gestión — cualquier usuario autenticado)
 export const reviewCategoriesApi = {
   list: () => api.get('/reviews/categories/'),

@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Save, User, Users, Key, Info, Upload, Shield, History, RotateCcw, Eye, Copy, Lock, ShieldAlert, Database, ListChecks, FileEdit, Trash2, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { authApi, auditLogApi } from '../lib/api'
+import { authApi, auditLogApi, appBrandingApi, uiThemeApi } from '../lib/api'
 import { useAuthStore } from '../store/authStore'
 import { useVaultStore } from '../store/vaultStore'
 import { Modal } from '../components/Modal'
@@ -11,7 +11,7 @@ import { Avatar, AVATAR_PRESETS } from '../components/Avatar'
 import { DatabaseTab } from '../components/database/DatabaseTab'
 import { ChecklistSettingsTab } from '../components/review/ChecklistSettingsTab'
 import { ReportBrandingTab } from '../components/reports/ReportBrandingTab'
-import type { AuditLogEntry, UserRole } from '../types'
+import type { AuditLogEntry, UserRole, UIThemeConfig } from '../types'
 
 const ROLE_LABELS: Record<UserRole, string> = {
   superadmin: 'Superadmin',
@@ -448,43 +448,213 @@ function AuditLogTab() {
   )
 }
 
+const UI_THEME_EMPTY: UIThemeConfig = {
+  dark_background: null, dark_text: null, dark_accent: null,
+  light_background: null, light_text: null, light_accent: null,
+}
+
+// Paleta violeta por defecto de index.css — solo para mostrar algo coherente
+// en el selector de color y el placeholder cuando el campo no está personalizado.
+const UI_THEME_FALLBACK: Record<'dark' | 'light', { background: string; text: string; accent: string }> = {
+  dark: { background: '0E0C14', text: 'EDE9FE', accent: '8B5CF6' },
+  light: { background: 'F5F3FF', text: '1E0B3E', accent: '7C3AED' },
+}
+
+const UI_THEME_FIELDS: { field: 'background' | 'text' | 'accent'; label: string; desc: string }[] = [
+  { field: 'background', label: 'Fondo', desc: 'Fondo general de la app (las tarjetas y superficies se derivan de este color).' },
+  { field: 'text', label: 'Texto', desc: 'Texto principal (los tonos secundario y atenuado se derivan de este).' },
+  { field: 'accent', label: 'Acento', desc: 'Botones, enlaces y elementos destacados; también colorea la cabecera del menú lateral.' },
+]
+
+/** Mensaje de error del backend si lo trae: string (HTTPException) o, en un 422 de
+ * Pydantic, una lista de errores de validación — si no, un genérico. */
+function apiErrorMessage(err: unknown, fallback: string): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { msg?: string }
+    if (typeof first?.msg === 'string') return first.msg.replace(/^Value error,\s*/, '')
+  }
+  return fallback
+}
+
+const HEX_RE = /^[0-9A-Fa-f]{6}$/
+const UI_THEME_FIELD_LABELS: Record<keyof UIThemeConfig, string> = {
+  dark_background: 'Fondo (oscuro)', dark_text: 'Texto (oscuro)', dark_accent: 'Acento (oscuro)',
+  light_background: 'Fondo (claro)', light_text: 'Texto (claro)', light_accent: 'Acento (claro)',
+}
+
+/** null si todos los colores son válidos (o están vacíos); si no, el mensaje del primero inválido. */
+function validateUiTheme(form: UIThemeConfig): string | null {
+  for (const key of Object.keys(form) as (keyof UIThemeConfig)[]) {
+    const v = form[key]
+    if (v && !HEX_RE.test(v)) {
+      return `Color "${UI_THEME_FIELD_LABELS[key]}" inválido: debe ser un hexadecimal de 6 dígitos (ej. 7C3AED).`
+    }
+  }
+  return null
+}
+
+/** URL de objeto para previsualizar un File elegido pero aún sin guardar; se revoca sola al cambiar/desmontar. */
+function usePreviewUrl(file: File | null): string | null {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!file) { setUrl(null); return }
+    const objectUrl = URL.createObjectURL(file)
+    setUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [file])
+  return url
+}
+
 function BrandingTab() {
-  const handleUpload = (type: 'logo' | 'icon') => async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const qc = useQueryClient()
+  const [logoBust, setLogoBust] = useState(Date.now())
+  const [iconBust, setIconBust] = useState(Date.now())
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [iconFile, setIconFile] = useState<File | null>(null)
+  const [form, setForm] = useState<UIThemeConfig>(UI_THEME_EMPTY)
+
+  const { data } = useQuery<UIThemeConfig>({
+    queryKey: ['ui-theme-config'],
+    queryFn: () => uiThemeApi.getConfig().then((r) => r.data),
+  })
+
+  useEffect(() => { if (data) setForm(data) }, [data])
+
+  // Object URLs de vista previa local para el logo/icono elegidos y todavía sin
+  // guardar; se liberan al cambiar de archivo o desmontar para no fugar memoria.
+  const logoPreviewUrl = usePreviewUrl(logoFile)
+  const iconPreviewUrl = usePreviewUrl(iconFile)
+
+  const saveAllMut = useMutation({
+    mutationFn: async () => {
+      if (logoFile) await appBrandingApi.uploadLogo(logoFile)
+      if (iconFile) await appBrandingApi.uploadIcon(iconFile)
+      await uiThemeApi.updateConfig(form)
+    },
+    onSuccess: () => {
+      toast.success('Identidad visual guardada')
+      if (logoFile) { setLogoFile(null); setLogoBust(Date.now()) }
+      if (iconFile) { setIconFile(null); setIconBust(Date.now()) }
+      qc.invalidateQueries({ queryKey: ['ui-theme-config'] })
+    },
+    onError: (err) => toast.error(apiErrorMessage(err, 'Error al guardar identidad visual')),
+  })
+
+  const handleSelectFile = (type: 'logo' | 'icon') => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const form = new FormData()
-    form.append('file', file)
-    try {
-      const res = await fetch(`/api/v1/branding/${type}`, { method: 'POST', body: form })
-      if (res.ok) toast.success(`${type === 'logo' ? 'Logo' : 'Icono'} actualizado. Recarga la página.`)
-      else toast.error('Error al subir')
-    } catch { toast.error('Error al subir') }
+    if (type === 'logo') setLogoFile(file)
+    else setIconFile(file)
+  }
+
+  const handleSaveAll = () => {
+    const error = validateUiTheme(form)
+    if (error) { toast.error(error); return }
+    saveAllMut.mutate()
+  }
+
+  const setColor = (mode: 'dark' | 'light', field: 'background' | 'text' | 'accent', value: string) => {
+    const key = `${mode}_${field}` as keyof UIThemeConfig
+    setForm((prev) => ({ ...prev, [key]: value.replace(/^#/, '').toUpperCase() }))
+  }
+
+  const resetTheme = (mode: 'dark' | 'light') => {
+    setForm((prev) => ({
+      ...prev,
+      [`${mode}_background`]: null, [`${mode}_text`]: null, [`${mode}_accent`]: null,
+    }))
+  }
+
+  const renderThemeSection = (mode: 'dark' | 'light', title: string) => {
+    const fallback = UI_THEME_FALLBACK[mode]
+    return (
+      <div className="card space-y-4">
+        <h3 className="section-title">{title}</h3>
+        <div className="space-y-3">
+          {UI_THEME_FIELDS.map(({ field, label, desc }) => {
+            const key = `${mode}_${field}` as keyof UIThemeConfig
+            const current = form[key]
+            return (
+              <div key={field} className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={`#${current ?? fallback[field]}`}
+                  onChange={(e) => setColor(mode, field, e.target.value)}
+                  className="w-10 h-10 rounded border border-border bg-transparent cursor-pointer shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-text-primary">{label}</p>
+                  <p className="text-xs text-text-muted">{desc}</p>
+                </div>
+                <input
+                  type="text"
+                  value={current ?? ''}
+                  placeholder={fallback[field]}
+                  onChange={(e) => setColor(mode, field, e.target.value)}
+                  maxLength={6}
+                  className="input w-24 text-sm font-mono uppercase shrink-0"
+                />
+              </div>
+            )
+          })}
+        </div>
+        <button onClick={() => resetTheme(mode)} className="btn-ghost text-xs flex items-center gap-1.5 pt-2 border-t border-border w-full">
+          <RotateCcw size={13} /> Restaurar valores por defecto
+        </button>
+      </div>
+    )
   }
 
   return (
-    <div className="card max-w-lg space-y-6">
-      <h3 className="section-title">Identidad visual corporativa</h3>
-      <p className="text-sm text-text-muted">
-        Los archivos se guardan en <code className="text-primary font-mono text-xs bg-surface-2 px-1.5 py-0.5 rounded">assets/branding/</code>.
-        También puedes copiarlos directamente a esa carpeta.
-      </p>
-      <div className="space-y-4">
-        {[
-          { type: 'logo' as const, label: 'Logo principal', desc: 'Aparece en Login, Dashboard, Navbar. PNG recomendado, fondo transparente.' },
-          { type: 'icon' as const, label: 'Icono de aplicación', desc: 'Usado como favicon y en la barra de título. PNG cuadrado (min 64x64).' },
-        ].map(({ type, label, desc }) => (
-          <div key={type} className="flex items-start gap-4 p-4 bg-surface-2 rounded-lg border border-border">
-            <div className="flex-1">
-              <p className="font-medium text-text-primary text-sm">{label}</p>
-              <p className="text-xs text-text-muted mt-0.5">{desc}</p>
-              <p className="text-xs text-primary font-mono mt-1">assets/branding/{type}.png</p>
+    <div className="space-y-5">
+      <div className="card max-w-lg space-y-6">
+        <h3 className="section-title">Logo e icono</h3>
+        <p className="text-sm text-text-muted">
+          Comunes a modo oscuro y claro. Elige un archivo nuevo y pulsa <strong>Guardar</strong> abajo para aplicarlo;
+          hasta entonces solo es una vista previa.
+        </p>
+        <div className="space-y-4">
+          {[
+            { type: 'logo' as const, label: 'Logo principal', desc: 'Aparece en Login, Dashboard, Navbar. PNG recomendado, fondo transparente.', bust: logoBust, file: logoFile, previewUrl: logoPreviewUrl },
+            { type: 'icon' as const, label: 'Icono de aplicación', desc: 'Usado como favicon y en la barra de título. PNG cuadrado (min 64x64).', bust: iconBust, file: iconFile, previewUrl: iconPreviewUrl },
+          ].map(({ type, label, desc, bust, file, previewUrl }) => (
+            <div key={type} className="flex items-center gap-4 p-4 bg-surface-2 rounded-lg border border-border">
+              <img
+                key={previewUrl ?? bust}
+                src={previewUrl ?? `/api/v1/branding/${type}?t=${bust}`}
+                alt={label}
+                className="h-12 w-12 object-contain bg-white rounded p-1 shrink-0"
+                onError={(e) => { (e.target as HTMLImageElement).style.visibility = 'hidden' }}
+              />
+              <div className="flex-1">
+                <p className="font-medium text-text-primary text-sm">{label}</p>
+                <p className="text-xs text-text-muted mt-0.5">{file ? `Pendiente de guardar: ${file.name}` : desc}</p>
+              </div>
+              <label className="btn-secondary cursor-pointer shrink-0">
+                <Upload size={13} /> Elegir
+                <input type="file" accept="image/png" className="hidden" onChange={handleSelectFile(type)} />
+              </label>
             </div>
-            <label className="btn-secondary cursor-pointer shrink-0">
-              <Upload size={13} /> Subir
-              <input type="file" accept="image/png" className="hidden" onChange={handleUpload(type)} />
-            </label>
-          </div>
-        ))}
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-4xl">
+        {renderThemeSection('dark', 'Colores — modo oscuro')}
+        {renderThemeSection('light', 'Colores — modo claro')}
+      </div>
+
+      <div className="flex justify-end max-w-4xl">
+        <button
+          onClick={handleSaveAll}
+          disabled={saveAllMut.isPending}
+          className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-40"
+        >
+          {saveAllMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+          Guardar
+        </button>
       </div>
     </div>
   )

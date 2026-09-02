@@ -22,6 +22,16 @@ export function darkenHex(hex: string, amount: number): string {
   return `${Math.round(r * f)} ${Math.round(g * f)} ${Math.round(b * f)}`
 }
 
+/** Mezcla dos colores hex ("A hacia B" en `weight`, 0 = solo A, 1 = solo B).
+ * Usado para derivar texto secundario/muted a partir de texto+fondo, ya que
+ * las CSS custom properties `--ac-*` son triplets RGB planos (sin alpha). */
+export function mixHex(hexA: string, hexB: string, weight: number): string {
+  const [r1, g1, b1] = parseHex(hexA)
+  const [r2, g2, b2] = parseHex(hexB)
+  const mix = (a: number, b: number) => Math.round(a + (b - a) * weight)
+  return `${mix(r1, r2)} ${mix(g1, g2)} ${mix(b1, b2)}`
+}
+
 /** Texto blanco o violeta oscuro (el mismo que usa el tema claro), según el brillo percibido del fondo. */
 export function pickContrastRgbTriplet(hex: string): string {
   const [r, g, b] = parseHex(hex)

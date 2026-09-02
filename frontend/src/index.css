@@ -49,8 +49,8 @@
   --ac-text-secondary:  74 53 112;
   --ac-text-muted:      124 92 178;
 
-  /* Cabecera de marca (sidebar): por defecto blanco liso; useBrandTheme la
-     sustituye por el color corporativo elegido en instalación/Configuración. */
+  /* Cabecera de marca (sidebar): por defecto blanco liso; useUiTheme la
+     sustituye por el color de acento elegido en Configuración → Identidad visual. */
   --ac-brand-header:    var(--ac-surface);
   --ac-brand-header-fg: var(--ac-text-primary);
 }

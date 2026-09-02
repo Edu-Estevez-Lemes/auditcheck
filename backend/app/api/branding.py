@@ -11,6 +11,8 @@ from ..models.user import User
 from ..models.report_branding import ReportBrandingConfig
 from ..schemas.report_branding import ReportBrandingOut, ReportBrandingUpdate
 from ..reports.report_branding import get_report_branding_config
+from ..schemas.ui_theme import UIThemeOut, UIThemeUpdate
+from ..services.ui_theme import get_ui_theme_config
 
 router = APIRouter(prefix="/branding", tags=["Branding"])
 
@@ -68,3 +70,25 @@ def update_report_config(
     db.commit()
     db.refresh(config)
     return ReportBrandingOut.model_validate(config)
+
+
+@router.get("/ui-theme", response_model=UIThemeOut)
+def get_ui_theme(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return UIThemeOut.model_validate(get_ui_theme_config(db))
+
+
+@router.put("/ui-theme", response_model=UIThemeOut)
+def update_ui_theme(
+    data: UIThemeUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+):
+    config = get_ui_theme_config(db)
+    for field in (
+        "dark_background", "dark_text", "dark_accent",
+        "light_background", "light_text", "light_accent",
+    ):
+        setattr(config, field, getattr(data, field))
+    db.commit()
+    db.refresh(config)
+    return UIThemeOut.model_validate(config)

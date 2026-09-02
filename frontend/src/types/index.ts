@@ -7,6 +7,15 @@ export interface ReportBrandingConfig {
   date_format: string
 }
 
+export interface UIThemeConfig {
+  dark_background: string | null
+  dark_text: string | null
+  dark_accent: string | null
+  light_background: string | null
+  light_text: string | null
+  light_accent: string | null
+}
+
 export interface User {
   id: number
   username: string

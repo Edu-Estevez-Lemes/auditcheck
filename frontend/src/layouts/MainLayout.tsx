@@ -5,7 +5,7 @@ import { Sidebar } from '../components/Sidebar'
 import { Avatar } from '../components/Avatar'
 import { useAuthStore } from '../store/authStore'
 import { useThemeStore } from '../store/themeStore'
-import { useBrandTheme } from '../hooks/useBrandTheme'
+import { useUiTheme } from '../hooks/useUiTheme'
 import { useConsoleStore } from '../store/consoleStore'
 import { useVaultStore } from '../store/vaultStore'
 import { ConsoleDrawer } from '../components/ConsoleDrawer'
@@ -26,7 +26,7 @@ export function MainLayout() {
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
   const { theme, toggleTheme } = useThemeStore()
-  useBrandTheme(theme)
+  useUiTheme(theme)
   const consoleOpen = useConsoleStore((s) => s.open)
   const openConsole = useConsoleStore((s) => s.openWithContext)
   const closeConsole = useConsoleStore((s) => s.close)

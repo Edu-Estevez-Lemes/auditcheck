@@ -39,7 +39,7 @@ El resultado queda en `Instalador_sfwr\output\AuditCheck_vX.X_Setup.exe`.
 
 Parámetros opcionales:
 
-- `-Version "3.2.0"` — si no se indica, se detecta automáticamente desde
+- `-Version "3.2.2"` — si no se indica, se detecta automáticamente desde
   `backend\app\config.py` (`APP_VERSION`).
 - `-Publisher "Nombre del MSP"` — texto que aparece en "Agregar o quitar
   programas". Por defecto `AuditCheck`.
