@@ -310,6 +310,96 @@ def _seed_review_categories():
         db.close()
 
 
+def _seed_install_branding():
+    """Aplica los colores corporativos elegidos en el instalador (si los hubo).
+
+    El instalador no puede escribir directamente en la base de datos (no
+    existe todavía en ese momento), así que deja un marcador en
+    data/install_branding.json; aquí se aplica una sola vez, en el primer
+    arranque, y se borra el marcador para no volver a pisar cambios que el
+    usuario haga luego desde Configuración.
+    """
+    marker = settings.DATA_DIR / "install_branding.json"
+    if not marker.exists():
+        return
+    db = SessionLocal()
+    try:
+        import json
+        from .models.report_branding import ReportBrandingConfig
+        from .reports.report_branding import get_report_branding_config
+
+        data = json.loads(marker.read_text(encoding="utf-8"))
+        config = get_report_branding_config(db)  # crea la fila con defaults si no existe
+        for field in ("header_color", "accent_color", "separator_color"):
+            value = data.get(field)
+            if value:
+                setattr(config, field, value)
+        db.commit()
+        logger.info("Colores corporativos del instalador aplicados")
+    except Exception as e:
+        logger.warning(f"Error aplicando colores del instalador: {e}")
+    finally:
+        db.close()
+        marker.unlink(missing_ok=True)
+
+
+def _seed_install_superadmin():
+    """
+    Crea el superadmin predefinido por el instalador, si lo hay, en el primer
+    arranque (no hay usuarios todavia). Evita la pantalla manual de "crear
+    superadmin" (ver Setup.tsx) en instalaciones desplegadas con el instalador
+    NSIS: build_installer.ps1 genera un usuario/contraseña ALEATORIO Y UNICO
+    por cada paquete .exe que compila (no un valor fijo compartido entre
+    instalaciones) y lo registra, fuera del repo, en
+    Instalador_sfwr/output/*_SUPERADMIN.txt para que soporte lo consulte.
+
+    El instalador deja ese usuario/contraseña en data/install_superadmin.json
+    (la base de datos todavia no existe durante la instalacion, igual que
+    con install_branding.json — ver _seed_install_branding). Aqui se aplica
+    una sola vez y se borra el marcador para no dejar la contraseña en claro
+    en disco mas tiempo del necesario.
+
+    Si el usuario ya paso por Setup.tsx o ya existe cualquier usuario (p.ej.
+    reinstalacion sobre datos existentes), no hace nada.
+    """
+    marker = settings.DATA_DIR / "install_superadmin.json"
+    if not marker.exists():
+        return
+    db = SessionLocal()
+    try:
+        import json
+        from .models.user import User
+        from .services.auth import hash_password
+
+        if db.query(User).count() > 0:
+            return
+
+        data = json.loads(marker.read_text(encoding="utf-8"))
+        username = (data.get("username") or "admin").strip()
+        password = data.get("password")
+        if not username or not password:
+            return
+
+        user = User(
+            username=username,
+            email=f"{username}@auditcheck.local",
+            full_name="Superadmin",
+            hashed_password=hash_password(password),
+            is_active=True,
+            is_admin=True,
+            role="superadmin",
+            must_change_password=True,
+        )
+        db.add(user)
+        db.commit()
+        logger.info(f"Superadmin del instalador sembrado: {username}")
+    except Exception as e:
+        logger.warning(f"Error sembrando superadmin del instalador: {e}")
+    finally:
+        db.close()
+        marker.unlink(missing_ok=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _ensure_dirs()
@@ -318,10 +408,19 @@ async def lifespan(app: FastAPI):
     _migrate_roles()
     _seed_login_profiles()
     _seed_review_categories()
+    _seed_install_superadmin()
+    _seed_install_branding()
 
     from .services.backup import maybe_auto_backup
     maybe_auto_backup()
-    logger.info(f"AUDITCHECK v{settings.APP_VERSION} iniciado en http://{settings.HOST}:{settings.PORT}")
+    # AUDITCHECK_HOST/PORT son las variables que realmente usa launcher.py
+    # para arrancar uvicorn; settings.HOST/PORT no las reciben, así que loguear
+    # estas últimas mostraría el puerto por defecto aunque se haya arrancado
+    # en otro (p. ej. el elegido en el instalador).
+    import os as _os
+    _host = _os.environ.get("AUDITCHECK_HOST", settings.HOST)
+    _port = _os.environ.get("AUDITCHECK_PORT", str(settings.PORT))
+    logger.info(f"AUDITCHECK v{settings.APP_VERSION} iniciado en http://{_host}:{_port}")
     yield
     logger.info("AUDITCHECK detenido")
 
@@ -367,11 +466,18 @@ app.include_router(vault_router.router, prefix=API_PREFIX)
 app.include_router(database_router.router, prefix=API_PREFIX)
 
 # Branding — logo corporativo
+# Cache-Control: no-store en las 4 rutas de abajo: sin esto, el navegador
+# cachea agresivamente por heurística (no hay ETag/Last-Modified que cambien
+# de forma fiable) y, tras subir un logo nuevo o reinstalar con uno distinto,
+# se sigue viendo el anterior hasta forzar recarga sin caché.
+_NO_STORE = {"Cache-Control": "no-store"}
+
+
 @app.get("/api/v1/branding/logo")
 def get_corp_logo():
     path = settings.BRANDING_DIR / "logo.png"
     if path.exists():
-        return FileResponse(str(path), media_type="image/png")
+        return FileResponse(str(path), media_type="image/png", headers=_NO_STORE)
     return JSONResponse(status_code=404, content={"detail": "Logo corporativo no encontrado. Coloca logo.png en assets/branding/"})
 
 
@@ -379,7 +485,7 @@ def get_corp_logo():
 def get_corp_icon():
     path = settings.BRANDING_DIR / "icon.png"
     if path.exists():
-        return FileResponse(str(path), media_type="image/png")
+        return FileResponse(str(path), media_type="image/png", headers=_NO_STORE)
     return JSONResponse(status_code=404, content={"detail": "Icono no encontrado. Coloca icon.png en assets/branding/"})
 
 
@@ -388,7 +494,7 @@ def get_report_logo():
     from .reports.report_branding import get_report_logo_path
     path = get_report_logo_path()
     if path:
-        return FileResponse(str(path), media_type="image/png")
+        return FileResponse(str(path), media_type="image/png", headers=_NO_STORE)
     return JSONResponse(status_code=404, content={"detail": "Sin logo de informes ni logo corporativo configurados"})
 
 
@@ -396,7 +502,7 @@ def get_report_logo():
 def get_emoji1():
     path = settings.BRANDING_DIR / "emoji1.png"
     if path.exists():
-        return FileResponse(str(path), media_type="image/png")
+        return FileResponse(str(path), media_type="image/png", headers=_NO_STORE)
     return JSONResponse(status_code=404, content={"detail": "emoji1.png no encontrado en assets/branding/"})
 
 

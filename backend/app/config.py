@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Aplicación
     APP_NAME: str = "AUDITCHECK"
-    APP_VERSION: str = "3.1.1"
+    APP_VERSION: str = "3.2.0"
     DEBUG: bool = False
 
     # Seguridad JWT
@@ -57,7 +57,11 @@ class Settings(BaseSettings):
         902, 903, 5480, 27017
     ]
 
-    model_config = {"env_file": ".env", "case_sensitive": True}
+    # extra="ignore": launcher.py escribe claves propias (AUDITCHECK_PORT,
+    # AUDITCHECK_BASE_DIR...) en el mismo .env; sin esto, pydantic-settings
+    # aborta el arranque entero con "Extra inputs are not permitted" en
+    # cuanto ese archivo contiene una clave que no es un campo de Settings.
+    model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 
     def model_post_init(self, __context: object) -> None:
         # ── Soporte para distribución empaquetada (launcher.py establece estas vars) ──

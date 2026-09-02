@@ -1,0 +1,3 @@
+# Artefactos de build (se regeneran con build_installer.ps1)
+.payload/
+output/
