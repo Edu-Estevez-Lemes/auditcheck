@@ -320,7 +320,10 @@ $SuperadminUser = "admin"
 # JSON del marcador y la linea de comandos de makensis.
 $SuperadminAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#-_=+'
 $randomBytes = New-Object byte[] 20
-[System.Security.Cryptography.RandomNumberGenerator]::Fill($randomBytes)
+# RNGCryptoServiceProvider, no RandomNumberGenerator::Fill (API de .NET Core
+# que no existe en .NET Framework / Windows PowerShell 5.1).
+$rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::new()
+try { $rng.GetBytes($randomBytes) } finally { $rng.Dispose() }
 $SuperadminPassword = -join ($randomBytes | ForEach-Object { $SuperadminAlphabet[$_ % $SuperadminAlphabet.Length] })
 
 if (Test-Path $OUT_EXE) { Remove-Item $OUT_EXE -Force }
