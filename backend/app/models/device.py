@@ -2,10 +2,10 @@ from __future__ import annotations
 from datetime import datetime
 from sqlalchemy import String, Integer, ForeignKey, DateTime, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 
-class Device(Base, TimestampMixin):
+class Device(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "devices"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -54,7 +54,7 @@ class Device(Base, TimestampMixin):
     )
 
 
-class Port(Base):
+class Port(Base, SyncUuidMixin):
     __tablename__ = "ports"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -73,7 +73,7 @@ class Port(Base):
     device: Mapped["Device"] = relationship(back_populates="ports")
 
 
-class DeviceKnowledge(Base, TimestampMixin):
+class DeviceKnowledge(Base, TimestampMixin, SyncUuidMixin):
     """Base de conocimiento persistente de dispositivos entre auditorías."""
     __tablename__ = "device_knowledge"
     __table_args__ = (

@@ -19,6 +19,9 @@ const ROLE_LABELS: Record<UserRole, string> = {
   tecnico: 'Técnico',
 }
 
+// Mayor primero: para saber si un rol es "superior" a otro al decidir qué acciones mostrar.
+const ROLE_RANK: Record<UserRole, number> = { superadmin: 3, admin: 2, tecnico: 1 }
+
 export function SettingsPage() {
   const { user: me } = useAuthStore()
   const isAdminPlus = me?.role === 'superadmin' || me?.role === 'admin'
@@ -251,6 +254,7 @@ function UsersTab() {
   const qc = useQueryClient()
   const { user: me } = useAuthStore()
   const isSuperadmin = me?.role === 'superadmin'
+  const creatableRoles: UserRole[] = isSuperadmin ? ['tecnico', 'admin', 'superadmin'] : ['tecnico', 'admin']
   const [showForm, setShowForm] = useState(false)
   const [newUser, setNewUser] = useState({ username: '', email: '', full_name: '', password: '', role: 'tecnico' as UserRole })
   const [tempPassword, setTempPassword] = useState<{ username: string; password: string } | null>(null)
@@ -356,7 +360,7 @@ function UsersTab() {
                   <button onClick={() => resetMut.mutate(u)} className="btn-ghost p-1 text-xs" title="Resetear contraseña">
                     <RotateCcw size={13} />
                   </button>
-                  {u.id !== me?.id && (
+                  {u.id !== me?.id && ROLE_RANK[u.role] <= ROLE_RANK[me?.role ?? 'tecnico'] && (
                     <button onClick={() => deleteMut.mutate(u.id)} className="btn-ghost p-1 hover:text-danger text-xs">Eliminar</button>
                   )}
                 </td>
@@ -384,8 +388,7 @@ function UsersTab() {
             <label className="label">Rol</label>
             <select className="input" value={newUser.role}
               onChange={(e) => setNewUser({ ...newUser, role: e.target.value as UserRole })}>
-              <option value="tecnico">Técnico</option>
-              <option value="admin">Administrador</option>
+              {creatableRoles.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
             </select>
           </div>
           <div className="flex gap-3 pt-2">

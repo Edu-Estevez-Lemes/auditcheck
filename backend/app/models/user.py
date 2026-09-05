@@ -2,13 +2,13 @@ from __future__ import annotations
 from datetime import datetime
 from sqlalchemy import String, Boolean, Integer, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 # Bloque 1 — Usuarios y roles
 ROLES = ("superadmin", "admin", "tecnico")
 
 
-class User(Base, TimestampMixin):
+class User(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

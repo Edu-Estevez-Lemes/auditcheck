@@ -1,13 +1,13 @@
 from __future__ import annotations
 from sqlalchemy import String, Integer
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 from ..reports.styles import DEFAULT_HEADER_COLOR, DEFAULT_ACCENT_COLOR, DEFAULT_SEPARATOR_COLOR
 
 DEFAULT_DATE_FORMAT = "%d-%m-%Y"
 
 
-class ReportBrandingConfig(Base, TimestampMixin):
+class ReportBrandingConfig(Base, TimestampMixin, SyncUuidMixin):
     """Configuración de marca de informes — fila única (id=1)."""
     __tablename__ = "report_branding_config"
 

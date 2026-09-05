@@ -2,10 +2,10 @@ from __future__ import annotations
 from datetime import datetime
 from sqlalchemy import String, Integer, ForeignKey, DateTime, Boolean, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 
-class ReviewSession(Base, TimestampMixin):
+class ReviewSession(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "review_sessions"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

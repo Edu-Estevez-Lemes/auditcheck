@@ -17,6 +17,7 @@ from .audit_log import AuditLog
 from .vault_config import VaultConfig
 from .report_branding import ReportBrandingConfig
 from .ui_theme import UIThemeConfig
+from .matrix_sync import MatrixSyncConfig
 
 __all__ = [
     "Base", "User", "Client", "IPRange", "Credential", "Audit",
@@ -24,5 +25,5 @@ __all__ = [
     "BackupJob", "BackupRepository", "FortiGateStatus", "SNMPDevice",
     "HardwareStatus", "LoginProfile", "ReviewSession", "ReviewConfig",
     "ReviewCategory", "ReviewTemplate", "AuditLog", "VaultConfig", "ReportBrandingConfig",
-    "UIThemeConfig",
+    "UIThemeConfig", "MatrixSyncConfig",
 ]

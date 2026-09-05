@@ -1,10 +1,10 @@
 from __future__ import annotations
 from sqlalchemy import String, Integer
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 
-class UIThemeConfig(Base, TimestampMixin):
+class UIThemeConfig(Base, TimestampMixin, SyncUuidMixin):
     """Colores de la interfaz configurables desde Identidad visual — fila
     única (id=1). Un set para modo oscuro y otro para modo claro; el logo/
     icono (assets/branding/) es común a ambos y no vive aquí. Campos NULL =

@@ -1,10 +1,10 @@
 from __future__ import annotations
 from sqlalchemy import String, Text, Integer, ForeignKey, Float, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 
-class FortiGateStatus(Base, TimestampMixin):
+class FortiGateStatus(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "fortigate_status"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -29,7 +29,7 @@ class FortiGateStatus(Base, TimestampMixin):
     alerts: Mapped[str | None] = mapped_column(Text)  # JSON
 
 
-class SNMPDevice(Base, TimestampMixin):
+class SNMPDevice(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "snmp_devices"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -46,7 +46,7 @@ class SNMPDevice(Base, TimestampMixin):
     snmp_version: Mapped[str | None] = mapped_column(String(10))
 
 
-class HardwareStatus(Base, TimestampMixin):
+class HardwareStatus(Base, TimestampMixin, SyncUuidMixin):
     """Estado hardware de iLO / iDRAC"""
     __tablename__ = "hardware_status"
 

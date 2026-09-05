@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Database, Save, Upload, Download, FolderOpen, ShieldAlert, Lock,
+  Database, Save, Upload, Download, FolderOpen, ShieldAlert, Lock, Server, RefreshCw, ArrowDownToLine, ArrowUpFromLine,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { databaseApi, clientsApi } from '../../lib/api'
+import { databaseApi, clientsApi, matrixSyncApi, type MatrixSyncConfigPayload } from '../../lib/api'
 import { Modal } from '../Modal'
+import { useAuthStore } from '../../store/authStore'
+import { useConsoleStore } from '../../store/consoleStore'
 import type { ClientSummary } from '../../types'
 
 function formatBytes(bytes: number): string {
@@ -79,8 +81,134 @@ export function DatabaseTab() {
         </div>
       </div>
 
+      <MatrixSyncCard />
+
       <ExportModal open={showExport} onClose={() => setShowExport(false)} />
       <ImportModal open={showImport} onClose={() => setShowImport(false)} onDone={() => qc.invalidateQueries({ queryKey: ['database-info'] })} />
+    </div>
+  )
+}
+
+interface MatrixSyncConfigView {
+  host: string
+  port: number
+  database: string
+  username: string
+  has_password: boolean
+  last_sync_at: string | null
+  last_sync_direction: string | null
+}
+
+function MatrixSyncCard() {
+  const qc = useQueryClient()
+  const { user: me } = useAuthStore()
+  const isSuperadmin = me?.role === 'superadmin'
+  const openConsole = useConsoleStore((s) => s.openWithContext)
+
+  const [form, setForm] = useState<MatrixSyncConfigPayload>({ host: '', port: 3306, database: '', username: '', password: '' })
+  const [testing, setTesting] = useState(false)
+
+  const { data: config } = useQuery<MatrixSyncConfigView | null>({
+    queryKey: ['matrix-sync-config'],
+    queryFn: () => matrixSyncApi.getConfig().then((r) => r.data),
+  })
+
+  useEffect(() => {
+    if (config) setForm((f) => ({ ...f, host: config.host, port: config.port, database: config.database, username: config.username }))
+  }, [config])
+
+  const saveMut = useMutation({
+    mutationFn: () => matrixSyncApi.setConfig(form),
+    onSuccess: () => {
+      toast.success('Conexión con la matriz guardada')
+      setForm((f) => ({ ...f, password: '' }))
+      qc.invalidateQueries({ queryKey: ['matrix-sync-config'] })
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(msg || 'Error al guardar la conexión')
+    },
+  })
+
+  const handleTest = async () => {
+    setTesting(true)
+    try {
+      await matrixSyncApi.testConnection(form)
+      toast.success('Conexión correcta')
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(msg || 'No se pudo conectar')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const startSync = (direction: 'pull' | 'push') => openConsole({ prefill: `syncmatriz ${direction}` })
+
+  return (
+    <div className="card space-y-4">
+      <h3 className="section-title flex items-center gap-2"><Server size={16} /> Sincronización con la matriz</h3>
+      <p className="text-xs text-text-muted">
+        Sincroniza esta base de datos embebida (SQLite) con la base de datos central de la organización
+        (MySQL). El proceso pide confirmación y la passphrase del vault desde la Consola de Red.
+      </p>
+
+      {isSuperadmin && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="form-group">
+            <label className="label">Host / IP</label>
+            <input type="text" className="input" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} />
+          </div>
+          <div className="form-group">
+            <label className="label">Puerto</label>
+            <input type="number" className="input" value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value) })} />
+          </div>
+          <div className="form-group">
+            <label className="label">Base de datos</label>
+            <input type="text" className="input" value={form.database} onChange={(e) => setForm({ ...form, database: e.target.value })} />
+          </div>
+          <div className="form-group">
+            <label className="label">Usuario</label>
+            <input type="text" className="input" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+          </div>
+          <div className="form-group col-span-2">
+            <label className="label">Contraseña {config?.has_password && '(dejar en blanco para no cambiarla)'}</label>
+            <input type="password" className="input" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          </div>
+        </div>
+      )}
+
+      {isSuperadmin && (
+        <div className="flex gap-3">
+          <button className="btn-secondary" onClick={handleTest} disabled={testing || !form.host}>
+            <RefreshCw size={14} /> {testing ? 'Probando...' : 'Probar conexión'}
+          </button>
+          <button className="btn-primary" onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !form.host || (!config?.has_password && !form.password)}>
+            <Save size={14} /> {saveMut.isPending ? 'Guardando...' : 'Guardar conexión'}
+          </button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 text-sm border-t border-border pt-3">
+        <InfoRow label="Estado" value={config ? 'Configurada' : 'Sin configurar'} />
+        <InfoRow label="Última sincronización" value={config?.last_sync_at ? `${new Date(config.last_sync_at).toLocaleString()} (${config.last_sync_direction})` : 'Nunca'} />
+      </div>
+
+      {config && (
+        <div className="flex flex-wrap gap-3">
+          <button className="btn-secondary" onClick={() => startSync('pull')}>
+            <ArrowDownToLine size={14} /> Traer de la matriz
+          </button>
+          {isSuperadmin && (
+            <button className="btn-secondary" onClick={() => startSync('push')}>
+              <ArrowUpFromLine size={14} /> Enviar a la matriz
+            </button>
+          )}
+        </div>
+      )}
+      {!config && !isSuperadmin && (
+        <p className="text-xs text-text-muted">Un superadmin debe configurar la conexión con la matriz antes de poder sincronizar.</p>
+      )}
     </div>
   )
 }

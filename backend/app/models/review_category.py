@@ -1,10 +1,10 @@
 from __future__ import annotations
 from sqlalchemy import String, Integer, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 
-class ReviewCategory(Base, TimestampMixin):
+class ReviewCategory(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "review_categories"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

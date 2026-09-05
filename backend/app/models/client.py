@@ -1,10 +1,10 @@
 from __future__ import annotations
 from sqlalchemy import String, Text, Boolean, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 
-class Client(Base, TimestampMixin):
+class Client(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "clients"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -29,7 +29,7 @@ class Client(Base, TimestampMixin):
     )
 
 
-class IPRange(Base):
+class IPRange(Base, SyncUuidMixin):
     __tablename__ = "ip_ranges"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

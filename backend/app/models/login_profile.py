@@ -1,10 +1,10 @@
 from __future__ import annotations
 from sqlalchemy import String, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 
-class LoginProfile(Base, TimestampMixin):
+class LoginProfile(Base, TimestampMixin, SyncUuidMixin):
     """
     Perfil de login reutilizable por tipo de dispositivo.
 

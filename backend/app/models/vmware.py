@@ -1,10 +1,10 @@
 from __future__ import annotations
 from sqlalchemy import String, Text, Integer, ForeignKey, Float, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 
-class VMwareHost(Base, TimestampMixin):
+class VMwareHost(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "vmware_hosts"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -34,7 +34,7 @@ class VMwareHost(Base, TimestampMixin):
     alarm_summary: Mapped[str | None] = mapped_column(Text)
 
 
-class VMwareVM(Base, TimestampMixin):
+class VMwareVM(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "vmware_vms"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -60,7 +60,7 @@ class VMwareVM(Base, TimestampMixin):
     issue_summary: Mapped[str | None] = mapped_column(Text)
 
 
-class Datastore(Base, TimestampMixin):
+class Datastore(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "datastores"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

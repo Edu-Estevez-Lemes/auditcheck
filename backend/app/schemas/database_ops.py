@@ -29,6 +29,25 @@ class ExportRequest(BaseModel):
     confirm_password: str | None = None
 
 
+class MatrixSyncConfigOut(BaseModel):
+    host: str
+    port: int
+    database: str
+    username: str
+    has_password: bool
+    last_sync_at: str | None
+    last_sync_direction: str | None
+
+
+class MatrixSyncConfigIn(BaseModel):
+    host: str = Field(..., min_length=1)
+    port: int = Field(default=3306, ge=1, le=65535)
+    database: str = Field(..., min_length=1)
+    username: str = Field(..., min_length=1)
+    # None/vacío = no cambiar la contraseña ya guardada (solo válido si ya había una).
+    password: str | None = None
+
+
 class ImportPreviewOut(BaseModel):
     magic: str
     format_version: int

@@ -10,17 +10,23 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..config import settings
-from ..schemas.database_ops import BackupOut, DatabaseInfoOut, ExportRequest, ImportPreviewOut
+from ..schemas.database_ops import (
+    BackupOut, DatabaseInfoOut, ExportRequest, ImportPreviewOut,
+    MatrixSyncConfigOut, MatrixSyncConfigIn,
+)
 from ..services import backup as backup_service
 from ..services import acbk, database_export, database_import
 from ..services import vault as vault_service
-from ..services.auth import get_current_user
+from ..services import matrix_sync
+from ..services.auth import get_current_user, require_role
 from ..services.audit_log import log_action
+from ..utils.crypto import encrypt_secret
 from ..models.user import User
 from ..models.client import Client
 from ..models.audit import Audit
 from ..models.device import Device
 from ..models.finding import Finding
+from ..models.matrix_sync import MatrixSyncConfig
 
 router = APIRouter(prefix="/database", tags=["Base de Datos"])
 
@@ -185,3 +191,64 @@ async def import_confirm(
         details={"mode": mode, "backup_path": backup_result["path"], "summary": summary}, request=request,
     )
     return {"message": "Importación completada", "backup_path": backup_result["path"], **summary}
+
+
+# ── Sincronización con la matriz (MySQL) ──────────────────────────────────
+# La configuración de conexión se gestiona aquí; el diff y la aplicación real
+# se hacen de forma interactiva desde la Consola de Red (comando `syncmatriz`,
+# ver services/console_commands.py), que pide la passphrase del vault como
+# confirmación explícita antes de tocar ningún dato.
+
+def _matrix_config_out(config: MatrixSyncConfig) -> MatrixSyncConfigOut:
+    return MatrixSyncConfigOut(
+        host=config.host, port=config.port, database=config.database, username=config.username,
+        has_password=bool(config.encrypted_password),
+        last_sync_at=config.last_sync_at.isoformat() if config.last_sync_at else None,
+        last_sync_direction=config.last_sync_direction,
+    )
+
+
+@router.get("/matrix-sync/config", response_model=MatrixSyncConfigOut | None)
+def get_matrix_sync_config(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    config = db.query(MatrixSyncConfig).first()
+    return _matrix_config_out(config) if config else None
+
+
+@router.put("/matrix-sync/config", response_model=MatrixSyncConfigOut)
+def set_matrix_sync_config(
+    request: Request,
+    data: MatrixSyncConfigIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("superadmin")),
+):
+    config = db.query(MatrixSyncConfig).first()
+    if not data.password and not config:
+        raise HTTPException(status_code=400, detail="La contraseña es obligatoria la primera vez")
+    if config:
+        config.host, config.port, config.database, config.username = data.host, data.port, data.database, data.username
+        if data.password:
+            config.encrypted_password = encrypt_secret(data.password)  # 423 automático si el vault está bloqueado
+    else:
+        config = MatrixSyncConfig(
+            host=data.host, port=data.port, database=data.database,
+            username=data.username, encrypted_password=encrypt_secret(data.password),
+        )
+        db.add(config)
+    db.commit()
+    db.refresh(config)
+    log_action(db, current_user, "update_matrix_sync_config", target_type="database", request=request)
+    return _matrix_config_out(config)
+
+
+@router.post("/matrix-sync/test-connection")
+def test_matrix_sync_connection(
+    data: MatrixSyncConfigIn,
+    _: User = Depends(require_role("superadmin")),
+):
+    if not data.password:
+        raise HTTPException(status_code=400, detail="Introduce la contraseña para probar la conexión")
+    try:
+        matrix_sync.test_connection(data.host, data.port, data.username, data.password, data.database)
+    except matrix_sync.MatrixSyncError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True}

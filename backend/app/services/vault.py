@@ -93,6 +93,24 @@ def verify_passphrase(db: Session, passphrase: str) -> bool:
         return False
 
 
+def get_fernet_for_passphrase(db: Session, passphrase: str) -> Fernet | None:
+    """Deriva y devuelve el Fernet del vault si `passphrase` es correcta, sin
+    mutar la sesión global desbloqueada (crypto.set_session_key). Usado por la
+    Sincronización con la matriz (services/matrix_sync.py), que exige reintroducir
+    la passphrase como confirmación explícita en el momento de sincronizar,
+    independientemente de si el vault ya está desbloqueado para otros usos."""
+    config = get_config(db)
+    if not config:
+        return None
+    fernet = _derive_fernet_from_config(config, passphrase)
+    try:
+        if fernet.decrypt(config.verifier.encode()) != VERIFIER_PLAINTEXT:
+            return None
+    except InvalidToken:
+        return None
+    return fernet
+
+
 def unlock(db: Session, passphrase: str) -> bool:
     config = get_config(db)
     if not config:

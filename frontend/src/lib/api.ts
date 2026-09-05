@@ -272,3 +272,18 @@ export const databaseApi = {
     return api.post('/database/import/confirm', form)
   },
 }
+
+// Sincronización con la matriz (MySQL central)
+export interface MatrixSyncConfigPayload {
+  host: string
+  port: number
+  database: string
+  username: string
+  password: string
+}
+
+export const matrixSyncApi = {
+  getConfig: () => api.get('/database/matrix-sync/config'),
+  setConfig: (data: MatrixSyncConfigPayload) => api.put('/database/matrix-sync/config', data),
+  testConnection: (data: MatrixSyncConfigPayload) => api.post('/database/matrix-sync/test-connection', data),
+}

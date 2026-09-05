@@ -2,10 +2,10 @@ from __future__ import annotations
 from datetime import datetime
 from sqlalchemy import String, Text, Integer, ForeignKey, Float, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 
-class BackupJob(Base, TimestampMixin):
+class BackupJob(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "backup_jobs"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -32,7 +32,7 @@ class BackupJob(Base, TimestampMixin):
     objects_count: Mapped[int | None] = mapped_column(Integer)
 
 
-class BackupRepository(Base, TimestampMixin):
+class BackupRepository(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "backup_repositories"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

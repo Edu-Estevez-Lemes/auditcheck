@@ -164,6 +164,47 @@ def _migrate_db():
         logger.warning(f"Migración DB (report_branding_config): {e}")
 
 
+def _migrate_sync_uuids():
+    """Añade la columna `uuid` (SyncUuidMixin) a toda tabla que la declare en el
+    modelo pero no la tenga aún en disco — instalaciones existentes que actualizan
+    a la versión con Sincronización de BD con la matriz. Rellena valores para las
+    filas ya existentes y crea el índice único después, porque SQLite no admite
+    un DEFAULT no constante en ADD COLUMN."""
+    import uuid as _uuid
+    from sqlalchemy import text, inspect
+
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+
+    for table in Base.metadata.sorted_tables:
+        if "uuid" not in table.columns or table.name not in table_names:
+            continue
+        try:
+            existing = {c["name"] for c in inspector.get_columns(table.name)}
+            with engine.connect() as conn:
+                if "uuid" not in existing:
+                    conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN uuid VARCHAR(36)"))
+                    conn.commit()
+                    logger.info(f"Migración: columna {table.name}.uuid añadida")
+
+                rows = conn.execute(text(f"SELECT id FROM {table.name} WHERE uuid IS NULL")).fetchall()
+                for (row_id,) in rows:
+                    conn.execute(
+                        text(f"UPDATE {table.name} SET uuid = :u WHERE id = :i"),
+                        {"u": str(_uuid.uuid4()), "i": row_id},
+                    )
+                if rows:
+                    conn.commit()
+                    logger.info(f"Migración: {len(rows)} fila(s) de {table.name} recibieron uuid")
+
+                conn.execute(text(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS ix_{table.name}_uuid ON {table.name}(uuid)"
+                ))
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Migración DB (uuid de {table.name}): {e}")
+
+
 def _migrate_roles():
     """
     Bloque 1 — Migra usuarios existentes de is_admin (bool) a role (str).
@@ -405,6 +446,7 @@ async def lifespan(app: FastAPI):
     _ensure_dirs()
     Base.metadata.create_all(bind=engine)
     _migrate_db()
+    _migrate_sync_uuids()
     _migrate_roles()
     _seed_login_profiles()
     _seed_review_categories()

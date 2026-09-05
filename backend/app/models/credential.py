@@ -1,10 +1,10 @@
 from __future__ import annotations
 from sqlalchemy import String, Text, Integer, ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 
-class Credential(Base, TimestampMixin):
+class Credential(Base, TimestampMixin, SyncUuidMixin):
     """
     Almacén cifrado de credenciales.
     Las contraseñas se almacenan SIEMPRE cifradas con Fernet.

@@ -9,7 +9,7 @@ import { consoleApi, auditsApi } from '../lib/api'
 import { useConsoleStore } from '../store/consoleStore'
 import type { Finding } from '../types'
 
-const WHITELIST_COMMANDS = ['ping', 'traceroute', 'nslookup', 'rdns', 'testport', 'banner', 'pingsweep']
+const WHITELIST_COMMANDS = ['ping', 'traceroute', 'nslookup', 'rdns', 'testport', 'banner', 'pingsweep', 'syncmatriz']
 const PROMPT = 'auditcheck > '
 
 export function NetworkConsole() {
@@ -48,6 +48,10 @@ export function NetworkConsole() {
     const lineBuffer = { current: prefill || '' }
     const history: string[] = []
     let historyIndex = 0
+    // Un comando interactivo (p.ej. syncmatriz) puede pedir un dato a mitad de
+    // ejecución vía type=prompt. Mientras esté activo, Enter envía la respuesta
+    // en vez de un comando nuevo, y si es secreto no se hace eco de lo tecleado.
+    const promptState = { current: null as { secret: boolean } | null }
 
     const writePrompt = () => term.write(`\r\n${PROMPT}${lineBuffer.current}`)
 
@@ -81,6 +85,10 @@ export function NetworkConsole() {
           term.writeln(`\x1b[31m${msg.line}\x1b[0m`)
           outputBufferRef.current.push(msg.line)
           writePrompt()
+        } else if (msg.type === 'prompt') {
+          promptState.current = { secret: !!msg.secret }
+          lineBuffer.current = ''
+          term.write(`\r\n\x1b[36m${msg.line}\x1b[0m `)
         } else if (msg.type === 'done') {
           writePrompt()
         }
@@ -103,9 +111,22 @@ export function NetworkConsole() {
       }
     }
 
+    const sendPromptAnswer = (answer: string) => {
+      lineBuffer.current = ''
+      term.write('\r\n')
+      promptState.current = null
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ answer }))
+      }
+    }
+
     const keyDisposable = term.onKey(({ key, domEvent }) => {
       const ev = domEvent
       if (ev.key === 'Enter') {
+        if (promptState.current) {
+          sendPromptAnswer(lineBuffer.current)
+          return
+        }
         const cmd = lineBuffer.current
         lineBuffer.current = ''
         term.write('\r\n')
@@ -114,6 +135,12 @@ export function NetworkConsole() {
         if (lineBuffer.current.length > 0) {
           lineBuffer.current = lineBuffer.current.slice(0, -1)
           term.write('\b \b')
+        }
+      } else if (promptState.current) {
+        // Modo prompt: solo texto libre y Backspace; sin historial/tab/flechas.
+        if (key.length === 1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+          lineBuffer.current += key
+          term.write(promptState.current.secret ? '*' : key)
         }
       } else if (ev.key === 'ArrowUp') {
         ev.preventDefault()

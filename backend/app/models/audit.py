@@ -2,10 +2,10 @@ from __future__ import annotations
 from datetime import datetime
 from sqlalchemy import String, Text, Integer, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 
-class Audit(Base, TimestampMixin):
+class Audit(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "audits"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

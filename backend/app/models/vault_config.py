@@ -1,12 +1,12 @@
 from __future__ import annotations
 from sqlalchemy import String, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, SyncUuidMixin
 
 # Bloque 2 — Vault con passphrase maestra. Fila única (id=1).
 
 
-class VaultConfig(Base, TimestampMixin):
+class VaultConfig(Base, TimestampMixin, SyncUuidMixin):
     __tablename__ = "vault_config"
 
     id: Mapped[int] = mapped_column(primary_key=True)

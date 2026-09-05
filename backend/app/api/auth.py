@@ -176,8 +176,8 @@ def create_user(
 ):
     if data.role not in ROLES:
         raise HTTPException(status_code=400, detail="Rol inválido")
-    if data.role == "superadmin":
-        raise HTTPException(status_code=403, detail="El rol superadmin no puede asignarse en la creación")
+    if data.role == "superadmin" and current_user.role != "superadmin":
+        raise HTTPException(status_code=403, detail="Solo un superadmin puede crear otro superadmin")
     if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(status_code=400, detail="El usuario ya existe")
 
